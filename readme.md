@@ -56,9 +56,8 @@ pip install -r requirements.txt
 
 ### 4. Set Up Gemini API Key (for the ADK Agent)
 
-1.  Create or use an existing [Google AI Studio](https://aistudio.google.com/) account.
-2.  Get your Gemini API key from the [API Keys section](https://aistudio.google.com/app/apikeys).
-3.  Set the API key as an environment variable. Create a `.env` file in the **root of the `adk-mcp` project**:
+
+  Set the API key as an environment variable. Create a `.env` file
 
     ```env
     GOOGLE_API_KEY=your_gemini_api_key_here
@@ -93,6 +92,55 @@ This will:
 
 You should see log output from both the agent (if any) and the MCP server (in `local_mcp/mcp_server_activity.log`, and potentially to the console if you uncomment the stream handler in `server.py`).
 
+## Demo Conversation
+
+Below is an example of how you might interact with the agent (via a client or test harness) to use the local MCP tools:
+
+**User:**
+```
+List all tables in the database.
+```
+**Agent:**
+```
+Tables listed successfully: users, todos
+```
+
+**User:**
+```
+Show me all users.
+```
+**Agent:**
+```
+[
+  {"id": 1, "username": "alice", "email": "alice@example.com"},
+  {"id": 2, "username": "bob", "email": "bob@example.com"},
+  {"id": 3, "username": "charlie", "email": "charlie@example.com"}
+]
+```
+
+**User:**
+```
+Add a new user with username 'dave' and email 'dave@example.com'.
+```
+**Agent:**
+```
+Data inserted successfully. Row ID: 4
+```
+
+**User:**
+```
+Show me all users.
+```
+**Agent:**
+```
+[
+  {"id": 1, "username": "alice", "email": "alice@example.com"},
+  {"id": 2, "username": "bob", "email": "bob@example.com"},
+  {"id": 3, "username": "charlie", "email": "charlie@example.com"},
+  {"id": 4, "username": "dave", "email": "dave@example.com"}
+]
+```
+
 ## Available Database Tools (Exposed by MCP Server)
 
 The `local_mcp/server.py` exposes the following tools for the ADK agent to use:
@@ -114,10 +162,7 @@ The `local_mcp/server.py` exposes the following tools for the ADK agent to use:
     *   Run `pip install deprecated` to install the missing dependency.
 -   **`No such file or directory` for `server.py`**:
     *   Ensure `PATH_TO_YOUR_MCP_SERVER_SCRIPT` in `local_mcp/agent.py` correctly points to `local_mcp/server.py`.
--   **Database Errors (e.g., "no such table")**:
-    *   Ensure you have run `python3 local_mcp/create_db.py` to create the `database.db` file and its tables.
-    *   Verify the `DATABASE_PATH` in `local_mcp/server.py` correctly points to `local_mcp/database.db`.
--   **API Key Issues**:
-    *   Make sure your `GOOGLE_API_KEY` is correctly set in the `.env` file in the project root and that the file is being loaded.
--   **MCP Server Log**:
-    *   Check `local_mcp/mcp_server_activity.log` for detailed logs from the MCP server, which can help diagnose issues with tool calls or database operations.
+
+## Acknowledgements
+
+This project was structured and the prompts were designed with the help of AI assistance to ensure clarity, efficiency, and best practices.
