@@ -11,7 +11,7 @@ PATH_TO_YOUR_MCP_SERVER_SCRIPT = str((Path(__file__).parent / "server.py").resol
 
 root_agent = LlmAgent(
     model="gemini-2.0-flash",
-    name="db_mcp_client_agent",
+    name="htcondor_mcp_client_agent",  # ✅ More descriptive
     instruction=DB_MCP_PROMPT,
     tools=[
         MCPToolset(
