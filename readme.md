@@ -137,6 +137,26 @@ The `local_mcp/server.py` exposes the following tools for the ADK agent to use:
     * Make sure you are running on a system with HTCondor and the Python bindings installed.
     * If running on a facility login node, these are usually pre-installed.
 
+* **`Could not find a version that satisfies the requirement mcp==1.9.1`** or **`Requires-Python >=3.10`**:
+    * The default Python on ATLAS is too old for `mcp` or `google-adk`.
+    * Run the following to install Python 3.10+ locally via Miniconda:
+
+    ```bash
+    cd ~
+    wget https://repo.anaconda.com/miniconda/Miniconda3-py310_24.1.2-0-Linux-x86_64.sh -O miniconda.sh
+    bash miniconda.sh -b -p $HOME/miniconda3
+    ~/miniconda3/bin/conda init bash
+    source ~/.bashrc
+    conda create -n adk310 python=3.10 -y
+    conda activate adk310
+    cd ~/adk-mcp
+    pip install --upgrade pip
+    pip install -r requirements.txt
+    ```
+
+    * These changes only affect your user account and are safe for use on ATLAS.
+
+
 ## Acknowledgements
 
 This project was structured and the prompts were designed with the help of AI assistance to ensure clarity, efficiency, and best practices.
