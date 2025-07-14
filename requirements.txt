@@ -1,4 +1,4 @@
 google-adk==1.0.0
 mcp==1.9.1
 deprecated==1.2.13
-htcondor==9.1.0
+htcondor==24.9.2
