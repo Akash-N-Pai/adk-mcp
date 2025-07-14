@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging  # Added logging
 import os
-import sqlite3  # For database operations
+# import sqlite3  # REMOVE
 
 import mcp.server.stdio  # For running as a stdio server
 from dotenv import load_dotenv
@@ -16,6 +16,8 @@ from mcp import types as mcp_types  # Use alias to avoid conflict
 from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
+import htcondor
+
 load_dotenv()
 
 # --- Logging Setup ---
@@ -27,173 +29,6 @@ logging.basicConfig(
         logging.FileHandler(LOG_FILE_PATH, mode="w"),
     ],
 )
-# --- End Logging Setup ---
-
-DATABASE_PATH = os.path.join(os.path.dirname(__file__), "database.db")
-
-
-# --- Database Utility Functions ---
-def get_db_connection():
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row  # To access columns by name
-    return conn
-
-
-def list_db_tables(dummy_param: str) -> dict:
-    """Lists all tables in the SQLite database.
-
-    Args:
-        dummy_param (str): This parameter is not used by the function
-                           but helps ensure schema generation. A non-empty string is expected.
-    Returns:
-        dict: A dictionary with keys 'success' (bool), 'message' (str),
-              and 'tables' (list[str]) containing the table names if successful.
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        return {
-            "success": True,
-            "message": "Tables listed successfully.",
-            "tables": tables,
-        }
-    except sqlite3.Error as e:
-        return {"success": False, "message": f"Error listing tables: {e}", "tables": []}
-    except Exception as e:  # Catch any other unexpected errors
-        return {
-            "success": False,
-            "message": f"An unexpected error occurred while listing tables: {e}",
-            "tables": [],
-        }
-
-
-def get_table_schema(table_name: str) -> dict:
-    """Gets the schema (column names and types) of a specific table."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(f"PRAGMA table_info('{table_name}');")  # Use PRAGMA for schema
-    schema_info = cursor.fetchall()
-    conn.close()
-    if not schema_info:
-        raise ValueError(f"Table '{table_name}' not found or no schema information.")
-
-    columns = [{"name": row["name"], "type": row["type"]} for row in schema_info]
-    return {"table_name": table_name, "columns": columns}
-
-
-def query_db_table(table_name: str, columns: str, condition: str) -> list[dict]:
-    """Queries a table with an optional condition.
-
-    Args:
-        table_name: The name of the table to query.
-        columns: Comma-separated list of columns to retrieve (e.g., "id, name"). Defaults to "*".
-        condition: Optional SQL WHERE clause condition (e.g., "id = 1" or "completed = 0").
-    Returns:
-        A list of dictionaries, where each dictionary represents a row.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    query = f"SELECT {columns} FROM {table_name}"
-    if condition:
-        query += f" WHERE {condition}"
-    query += ";"
-
-    try:
-        cursor.execute(query)
-        results = [dict(row) for row in cursor.fetchall()]
-    except sqlite3.Error as e:
-        conn.close()
-        raise ValueError(f"Error querying table '{table_name}': {e}")
-    conn.close()
-    return results
-
-
-def insert_data(table_name: str, data: dict) -> dict:
-    """Inserts a new row of data into the specified table.
-
-    Args:
-        table_name (str): The name of the table to insert data into.
-        data (dict): A dictionary where keys are column names and values are the
-                     corresponding values for the new row.
-
-    Returns:
-        dict: A dictionary with keys 'success' (bool) and 'message' (str).
-              If successful, 'message' includes the ID of the newly inserted row.
-    """
-    if not data:
-        return {"success": False, "message": "No data provided for insertion."}
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    columns = ", ".join(data.keys())
-    placeholders = ", ".join(["?" for _ in data])
-    values = tuple(data.values())
-
-    query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
-
-    try:
-        cursor.execute(query, values)
-        conn.commit()
-        last_row_id = cursor.lastrowid
-        return {
-            "success": True,
-            "message": f"Data inserted successfully. Row ID: {last_row_id}",
-            "row_id": last_row_id,
-        }
-    except sqlite3.Error as e:
-        conn.rollback()  # Roll back changes on error
-        return {
-            "success": False,
-            "message": f"Error inserting data into table '{table_name}': {e}",
-        }
-    finally:
-        conn.close()
-
-
-def delete_data(table_name: str, condition: str) -> dict:
-    """Deletes rows from a table based on a given SQL WHERE clause condition.
-
-    Args:
-        table_name (str): The name of the table to delete data from.
-        condition (str): The SQL WHERE clause condition to specify which rows to delete.
-                         This condition MUST NOT be empty to prevent accidental mass deletion.
-
-    Returns:
-        dict: A dictionary with keys 'success' (bool) and 'message' (str).
-              If successful, 'message' includes the count of deleted rows.
-    """
-    if not condition or not condition.strip():
-        return {
-            "success": False,
-            "message": "Deletion condition cannot be empty. This is a safety measure to prevent accidental deletion of all rows.",
-        }
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    query = f"DELETE FROM {table_name} WHERE {condition}"
-
-    try:
-        cursor.execute(query)
-        rows_deleted = cursor.rowcount
-        conn.commit()
-        return {
-            "success": True,
-            "message": f"{rows_deleted} row(s) deleted successfully from table '{table_name}'.",
-            "rows_deleted": rows_deleted,
-        }
-    except sqlite3.Error as e:
-        conn.rollback()
-        return {
-            "success": False,
-            "message": f"Error deleting data from table '{table_name}': {e}",
-        }
-    finally:
-        conn.close()
 
 
 # --- MCP Server Setup ---
@@ -203,12 +38,36 @@ logging.info(
 app = Server("sqlite-db-mcp-server")
 
 # Wrap database utility functions as ADK FunctionTools
-ADK_DB_TOOLS = {
-    "list_db_tables": FunctionTool(func=list_db_tables),
-    "get_table_schema": FunctionTool(func=get_table_schema),
-    "query_db_table": FunctionTool(func=query_db_table),
-    "insert_data": FunctionTool(func=insert_data),
-    "delete_data": FunctionTool(func=delete_data),
+def list_jobs(owner: str = None) -> dict:
+    """List all jobs in the queue, optionally filtered by owner."""
+    schedd = htcondor.Schedd()
+    constraint = f'Owner == "{owner}"' if owner else "True"
+    jobs = schedd.query(constraint)
+    return {
+        "success": True,
+        "jobs": [dict(job) for job in jobs]
+    }
+
+def get_job_status(cluster_id: int) -> dict:
+    """Get status/details for a specific job."""
+    schedd = htcondor.Schedd()
+    jobs = schedd.query(f'ClusterId == {cluster_id}')
+    if not jobs:
+        return {"success": False, "message": "Job not found"}
+    return {"success": True, "job": dict(jobs[0])}
+
+def submit_job(submit_description: dict) -> dict:
+    """Submit a new job to HTCondor."""
+    schedd = htcondor.Schedd()
+    submit = htcondor.Submit(submit_description)
+    with schedd.transaction() as txn:
+        cluster_id = submit.queue(txn)
+    return {"success": True, "cluster_id": cluster_id}
+
+ADK_AF_TOOLS = {
+    "list_jobs": FunctionTool(func=list_jobs),
+    "get_job_status": FunctionTool(func=get_job_status),
+    "submit_job": FunctionTool(func=submit_job),
 }
 
 
@@ -219,7 +78,7 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
         "MCP Server: Received list_tools request."
     )  # Changed print to logging.info
     mcp_tools_list = []
-    for tool_name, adk_tool_instance in ADK_DB_TOOLS.items():
+    for tool_name, adk_tool_instance in ADK_AF_TOOLS.items():
         if not adk_tool_instance.name:
             adk_tool_instance.name = tool_name
 
@@ -238,8 +97,8 @@ async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextConten
         f"MCP Server: Received call_tool request for '{name}' with args: {arguments}"
     )  # Changed print to logging.info
 
-    if name in ADK_DB_TOOLS:
-        adk_tool_instance = ADK_DB_TOOLS[name]
+    if name in ADK_AF_TOOLS:
+        adk_tool_instance = ADK_AF_TOOLS[name]
         try:
             adk_tool_response = await adk_tool_instance.run_async(
                 args=arguments,
