@@ -33,9 +33,9 @@ logging.basicConfig(
 
 # --- MCP Server Setup ---
 logging.info(
-    "Creating MCP Server instance for SQLite DB..."
+    "Creating MCP Server instance for HTCondor..."
 )  # Changed print to logging.info
-app = Server("sqlite-db-mcp-server")
+app = Server("htcondor-mcp-server")
 
 # Wrap database utility functions as ADK FunctionTools
 def list_jobs(owner: str = None) -> dict:
@@ -158,7 +158,7 @@ async def run_mcp_stdio_server():
 
 if __name__ == "__main__":
     logging.info(
-        "Launching SQLite DB MCP Server via stdio..."
+        "Launching HTCondor MCP Server via stdio..."
     )  # Changed print to logging.info
     try:
         asyncio.run(run_mcp_stdio_server())
