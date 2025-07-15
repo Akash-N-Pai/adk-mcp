@@ -66,19 +66,26 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_co
 
 
 # ---- TOOL: get_job_status ----
-def get_job_status(cluster_id: int, tool_context=None) -> dict:
-    """Get status of a specific job by cluster ID."""
+def get_job_status(cluster_id: str, tool_context=None) -> dict:
+    """
+    Get status of a specific job by cluster.proc (e.g., '6351153.61' or just '6351153').
+    """
     schedd = htcondor.Schedd()
-    ads = schedd.query(f"ClusterId == {cluster_id}")
-    if not ads:
-        return {"success": False, "message": "Job not found"}
-
     try:
+        if '.' in str(cluster_id):
+            cluster, proc = str(cluster_id).split('.')
+            query = f"ClusterId == {int(cluster)} && ProcId == {int(proc)}"
+        else:
+            cluster = int(cluster_id)
+            query = f"ClusterId == {cluster}"
+        ads = schedd.query(query)
+        if not ads:
+            return {"success": False, "message": "Job not found"}
         job = json.loads(ads[0].printJson())
         return {"success": True, "job": job}
     except Exception as e:
-        logging.error(f"Failed to serialize job: {e}")
-        return {"success": False, "message": f"Serialization error: {str(e)}"}
+        logging.error(f"Failed to get job status: {e}")
+        return {"success": False, "message": f"Error: {str(e)}"}
 
 
 # ---- TOOL: submit_job ----
