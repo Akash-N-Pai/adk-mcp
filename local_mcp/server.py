@@ -151,12 +151,40 @@ def count_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_c
             "message": str(e)
         }
 
+# ---- TOOL: get_session_state ----
+def get_session_state(tool_context=None) -> dict:
+    """
+    Get current session state information including recent jobs, job history, and active filters.
+    """
+    try:
+        # For now, return a basic session state structure
+        # In a full implementation, this would track actual session data
+        session_info = {
+            "recent_jobs_count": 0,
+            "job_history_count": 0,
+            "last_query_time": None,
+            "active_filters": {},
+            "recent_job_statuses": [],
+            "session_id": "default_session"
+        }
+        return {
+            "success": True,
+            "session_state": session_info
+        }
+    except Exception as e:
+        logging.error(f"Failed to get session state: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": str(e)
+        }
+
 # Register ADK tools
 ADK_AF_TOOLS = {
     "list_jobs": FunctionTool(func=list_jobs),
     "get_job_status": FunctionTool(func=get_job_status),
     "submit_job": FunctionTool(func=submit_job),
     "count_jobs": FunctionTool(func=count_jobs),
+    "get_session_state": FunctionTool(func=get_session_state),
 }
 
 @app.list_tools()

@@ -154,8 +154,9 @@ Show me my recent job activity.
 
 The `local_mcp/server.py` exposes the following tools for the ADK agent to use:
 
-- **`list_jobs(owner: str = None) -> dict`**: Lists all jobs in the queue, optionally filtered by owner. Updates session state with recent jobs and query time.
-- **`get_job_status(cluster_id: int) -> dict`**: Retrieves the status/details for a specific job. Tracks job queries in session history.
+- **`list_jobs(owner: str = None, status: str = None) -> dict`**: Lists jobs in the queue, optionally filtered by owner or status. Returns only the first 10 jobs and includes total_jobs count. Updates session state with recent jobs and query time.
+- **`count_jobs(owner: str = None, status: str = None) -> dict`**: Counts total number of jobs in HTCondor, optionally filtered by owner or status. Lightweight tool that only returns the count, not job data.
+- **`get_job_status(cluster_id: str) -> dict`**: Retrieves the status/details for a specific job by cluster ID (supports both ClusterId and ClusterId.ProcId formats). Tracks job queries in session history.
 - **`submit_job(submit_description: dict) -> dict`**: Submits a new job to HTCondor. Records job submission in session history.
 - **`get_session_state() -> dict`**: Retrieves current session information including recent jobs, query history, and active filters for context-aware responses.
 
