@@ -21,7 +21,7 @@ adk-mcp/
 ## Setup Instructions
 
 ### 1. Prerequisites
-- Python 3.8 or newer
+- Python 3.10 or newer
 - Access to a terminal or command prompt
 
 ### 2. Create and Activate Virtual Environment
