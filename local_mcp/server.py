@@ -11,7 +11,7 @@ from mcp import types as mcp_types
 from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 import htcondor
-from typing import Optional
+from typing import Union
 
 # Load environment variables (e.g. HTCondor config)
 load_dotenv()
@@ -28,7 +28,7 @@ logging.info("Initializing HTCondor MCP Server...")
 app = Server("htcondor-mcp-server")
 
 # ---- TOOL: list_jobs ----
-def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_context=None) -> dict:
+def list_jobs(owner: Union[str, None] = None, status: Union[str, None] = None, tool_context=None) -> dict:
     """
     List jobs in HTCondor, optionally filtered by owner or status.
     Returns only the first 10 jobs, and includes total_jobs count.
@@ -109,7 +109,7 @@ def submit_job(submit_description: dict, tool_context=None) -> dict:
         return {"success": False, "message": str(e)}
 
 # ---- TOOL: count_jobs ----
-def count_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_context=None) -> dict:
+def count_jobs(owner: Union[str, None] = None, status: Union[str, None] = None, tool_context=None) -> dict:
     """
     Count total number of jobs in HTCondor, optionally filtered by owner or status.
     Lightweight tool that only returns the count, not job data.
