@@ -17,6 +17,7 @@ from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
 import htcondor
+from typing import Optional
 
 load_dotenv()
 
@@ -37,122 +38,37 @@ logging.info(
 )  # Changed print to logging.info
 app = Server("htcondor-mcp-server")
 
-# Session state management
-class SessionState:
-    def __init__(self):
-        self.user_preferences = {}
-        self.recent_jobs = []
-        self.last_query_time = None
-        self.active_filters = {}
-        self.job_history = []
-
-# Global session state (in production, you'd want per-session state)
-session_state = SessionState()
-
 # Wrap database utility functions as ADK FunctionTools
-def list_jobs(owner: str = None, status: str = None, tool_context=None) -> dict:
-    """List jobs in the queue, optionally filtered by owner and/or status (e.g., running)."""
+def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_context=None) -> dict:
+    """List all jobs in the queue, optionally filtered by owner."""
     schedd = htcondor.Schedd()
-    constraint_parts = []
-    if owner:
-        constraint_parts.append(f'Owner == "{owner}"')
-    if status:
-        # Map status string to HTCondor JobStatus code
-        status_map = {
-            'running': 2,
-            'idle': 1,
-            'held': 5,
-            'completed': 4,
-            'removed': 3,
-            'transferring_output': 6,
-            'suspended': 7
-        }
-        status_code = status_map.get(status.lower())
-        if status_code is not None:
-            constraint_parts.append(f'JobStatus == {status_code}')
-    constraint = ' and '.join(constraint_parts) if constraint_parts else "True"
+    constraint = f'Owner == "{owner}"' if owner else "True"
     jobs = schedd.query(constraint)
-    
-    # Update session state
-    if tool_context and hasattr(tool_context, 'state'):
-        tool_context.state.last_query_time = asyncio.get_event_loop().time()
-        tool_context.state.recent_jobs = [dict(job) for job in jobs]
-        if owner:
-            tool_context.state.active_filters['owner'] = owner
-        if status:
-            tool_context.state.active_filters['status'] = status
-    
     return {
         "success": True,
-        "jobs": [dict(job) for job in jobs],
-        "session_info": {
-            "query_time": asyncio.get_event_loop().time(),
-            "total_jobs": len(jobs)
-        }
+        "jobs": [dict(job) for job in jobs]
     }
 
-def get_job_status(cluster_id: int, tool_context=None) -> dict:
+def get_job_status(cluster_id: int) -> dict:
     """Get status/details for a specific job."""
     schedd = htcondor.Schedd()
     jobs = schedd.query(f'ClusterId == {cluster_id}')
-    
     if not jobs:
         return {"success": False, "message": "Job not found"}
-    
-    job_data = dict(jobs[0])
-    
-    # Update session state
-    if tool_context and hasattr(tool_context, 'state'):
-        tool_context.state.job_history.append({
-            'cluster_id': cluster_id,
-            'query_time': asyncio.get_event_loop().time(),
-            'status': job_data.get('JobStatus', 'Unknown')
-        })
-    
-    return {"success": True, "job": job_data}
+    return {"success": True, "job": dict(jobs[0])}
 
-def submit_job(submit_description: dict, tool_context=None) -> dict:
+def submit_job(submit_description: dict) -> dict:
     """Submit a new job to HTCondor."""
     schedd = htcondor.Schedd()
     submit = htcondor.Submit(submit_description)
-    
     with schedd.transaction() as txn:
         cluster_id = submit.queue(txn)
-    
-    # Update session state
-    if tool_context and hasattr(tool_context, 'state'):
-        tool_context.state.job_history.append({
-            'cluster_id': cluster_id,
-            'submit_time': asyncio.get_event_loop().time(),
-            'description': submit_description
-        })
-    
     return {"success": True, "cluster_id": cluster_id}
-
-# Add a new tool to get session state
-def get_session_state(tool_context=None) -> dict:
-    """Get current session state information."""
-    if tool_context and hasattr(tool_context, 'state'):
-        return {
-            "success": True,
-            "session_state": {
-                "recent_jobs_count": len(tool_context.state.recent_jobs),
-                "job_history_count": len(tool_context.state.job_history),
-                "last_query_time": tool_context.state.last_query_time,
-                "active_filters": tool_context.state.active_filters,
-                "recent_job_statuses": [
-                    job.get('JobStatus', 'Unknown') 
-                    for job in tool_context.state.recent_jobs[:5]
-                ]
-            }
-        }
-    return {"success": False, "message": "No session state available"}
 
 ADK_AF_TOOLS = {
     "list_jobs": FunctionTool(func=list_jobs),
     "get_job_status": FunctionTool(func=get_job_status),
     "submit_job": FunctionTool(func=submit_job),
-    "get_session_state": FunctionTool(func=get_session_state),
 }
 
 
@@ -185,17 +101,11 @@ async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextConten
     if name in ADK_AF_TOOLS:
         adk_tool_instance = ADK_AF_TOOLS[name]
         try:
-            # Create tool context with session state
-            tool_context = type('ToolContext', (), {
-                'state': session_state,
-                'session_id': 'default_session'  # In production, use unique session IDs
-            })()
-            
             adk_tool_response = await adk_tool_instance.run_async(
                 args=arguments,
-                tool_context=tool_context,
+                tool_context=None,  # type: ignore
             )
-            logging.info(
+            logging.info(  # Changed print to logging.info
                 f"MCP Server: ADK tool '{name}' executed. Response: {adk_tool_response}"
             )
             response_text = json.dumps(adk_tool_response, indent=2)
