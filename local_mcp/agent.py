@@ -6,6 +6,7 @@ from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParamet
 from local_mcp.prompt import DB_MCP_PROMPT
 
 # IMPORTANT: Dynamically compute the absolute path to your server.py script
+# The ADK agent for HTCondor/ATLAS Facility with session state management
 PATH_TO_YOUR_MCP_SERVER_SCRIPT = str((Path(__file__).parent / "server.py").resolve())
 
 

@@ -1,16 +1,15 @@
 # ADK Agent MCP Server
 
-This project demonstrates an Agent Development Kit (ADK) agent that interacts with the ATLAS Facility via HTCondor using a local Model Context Protocol (MCP) server. The MCP server exposes tools to query, monitor, and submit jobs to the facility, and the agent uses these tools to fulfill user requests.
+This project demonstrates an Agent Development Kit (ADK) agent that interacts with the ATLAS Facility via HTCondor using a local Model Context Protocol (MCP) server. The MCP server exposes tools to query, monitor, and submit jobs to the facility with session state management for context-aware responses, and the agent uses these tools to fulfill user requests.
 
 ## Project Structure
 
 ```
 adk-mcp/
 ├── local_mcp/
-│   ├── agent.py             # The ADK agent for the local SQLite DB
-│   ├── server.py            # The MCP server exposing database tools
+│   ├── agent.py             # The ADK agent for HTCondor/ATLAS Facility
+│   ├── server.py            # The MCP server exposing HTCondor tools with session state
 │   ├── prompt.py            # Prompt instructions for the agent
-│   ├── mcp_server_activity.log # Log file for MCP server activity
 │   └── __init__.py
 ├── .env                   # For GOOGLE_API_KEY (ensure it's in .gitignore if repo is public)
 ├── requirements.txt       # Python dependencies
@@ -95,7 +94,29 @@ List all jobs in the queue.
   "jobs": [
     {"ClusterId": 123, "JobStatus": 2, "Owner": "alice", ...},
     {"ClusterId": 124, "JobStatus": 1, "Owner": "bob", ...}
-  ]
+  ],
+  "session_info": {
+    "query_time": 1640995200.0,
+    "total_jobs": 2
+  }
+}
+```
+
+**User:**
+```
+What jobs did I look at recently?
+```
+**Agent:**
+```
+{
+  "success": true,
+  "session_state": {
+    "recent_jobs_count": 2,
+    "job_history_count": 0,
+    "last_query_time": 1640995200.0,
+    "active_filters": {},
+    "recent_job_statuses": [2, 1]
+  }
 }
 ```
 
@@ -113,13 +134,19 @@ Get the status of job 123.
 
 **User:**
 ```
-Submit a new job with the following description: {"executable": "/bin/sleep", "arguments": "60"}
+Show me my recent job activity.
 ```
 **Agent:**
 ```
 {
   "success": true,
-  "cluster_id": 125
+  "session_state": {
+    "recent_jobs_count": 2,
+    "job_history_count": 1,
+    "last_query_time": 1640995200.0,
+    "active_filters": {},
+    "recent_job_statuses": [2, 1]
+  }
 }
 ```
 
@@ -127,15 +154,47 @@ Submit a new job with the following description: {"executable": "/bin/sleep", "a
 
 The `local_mcp/server.py` exposes the following tools for the ADK agent to use:
 
-- **`list_jobs(owner: str = None) -> dict`**: Lists all jobs in the queue, optionally filtered by owner.
-- **`get_job_status(cluster_id: int) -> dict`**: Retrieves the status/details for a specific job.
-- **`submit_job(submit_description: dict) -> dict`**: Submits a new job to HTCondor.
+- **`list_jobs(owner: str = None) -> dict`**: Lists all jobs in the queue, optionally filtered by owner. Updates session state with recent jobs and query time.
+- **`get_job_status(cluster_id: int) -> dict`**: Retrieves the status/details for a specific job. Tracks job queries in session history.
+- **`submit_job(submit_description: dict) -> dict`**: Submits a new job to HTCondor. Records job submission in session history.
+- **`get_session_state() -> dict`**: Retrieves current session information including recent jobs, query history, and active filters for context-aware responses.
+
+## Session State Management
+
+The MCP server maintains session state to provide context-aware responses and track user activity:
+
+### **Tracked Information:**
+- **Recent Jobs**: List of jobs from the most recent query
+- **Job History**: Record of job status queries and submissions
+- **Query Times**: Timestamps of recent operations
+- **Active Filters**: Currently applied filters (e.g., owner)
+- **User Preferences**: Stored preferences for future queries
+
+### **Benefits:**
+- **Context-Aware Responses**: Agent can reference previous queries and job status
+- **Activity Tracking**: Users can ask about recent activity and job history
+- **Smart Defaults**: System remembers frequently used filters and preferences
+- **Enhanced UX**: More natural conversation flow with historical context
+
+### **Example Session-Aware Interactions:**
+- "What jobs did I look at recently?"
+- "Show me the status of the job I just submitted"
+- "List jobs for the same owner as before"
+- "What's my recent job activity?"
 
 ## Troubleshooting
 
 * **`No module named 'htcondor'`**:
     * Make sure you are running on a system with HTCondor and the Python bindings installed.
     * If running on a facility login node, these are usually pre-installed.
+
+* **Session state not persisting**:
+    * Session state is currently in-memory only and resets when the server restarts.
+    * For persistent state, consider implementing database storage or file-based persistence.
+
+* **Agent not providing context-aware responses**:
+    * Ensure the agent is using the `get_session_state` tool when appropriate.
+    * Check that the prompt instructions include session awareness guidance.
 
 * **`Could not find a version that satisfies the requirement mcp==1.9.1`** or **`Requires-Python >=3.10`**:
     * The default Python on ATLAS is too old for `mcp` or `google-adk`.
