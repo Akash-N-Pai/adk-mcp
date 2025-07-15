@@ -29,39 +29,40 @@ app = Server("htcondor-mcp-server")
 
 # ---- TOOL: list_jobs ----
 def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_context=None) -> dict:
-    """Return list of jobs filtered by owner/status, in JSON-safe format."""
-    schedd = htcondor.Schedd()
-    constraints = []
-    if owner:
-        constraints.append(f'Owner == "{owner}"')
-    if status:
-        code_map = {
-            "idle": 1,
-            "running": 2,
-            "removed": 3,
-            "completed": 4,
-            "held": 5,
-            "transferring_output": 6,
-            "suspended": 7
+    logging.info(f"HTCondor query started: owner={owner}, status={status}")
+    try:
+        schedd = htcondor.Schedd()
+        constraint_parts = []
+        if owner:
+            constraint_parts.append(f'Owner == "{owner}"')
+        if status:
+            status_map = {
+                'running': 2,
+                'idle': 1,
+                'held': 5,
+                'completed': 4,
+                'removed': 3,
+                'transferring_output': 6,
+                'suspended': 7
+            }
+            status_code = status_map.get(status.lower())
+            if status_code is not None:
+                constraint_parts.append(f'JobStatus == {status_code}')
+        constraint = ' and '.join(constraint_parts) if constraint_parts else "True"
+        
+        ads = schedd.query(constraint)
+        logging.info(f"HTCondor returned {len(ads)} jobs.")
+        return {
+            "success": True,
+            "jobs": [json.loads(ad.printJson()) for ad in ads]
         }
-        status_code = code_map.get(status.lower())
-        if status_code is not None:
-            constraints.append(f"JobStatus == {status_code}")
-    constraint = " and ".join(constraints) if constraints else "True"
+    except Exception as e:
+        logging.error(f"HTCondor query failed: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": str(e)
+        }
 
-    ads = schedd.query(constraint)
-    important_fields = ["ClusterId", "ProcId", "Owner", "JobStatus", "Cmd"]
-    jobs = []
-
-    for ad in ads:
-        try:
-            parsed = json.loads(ad.printJson())
-            filtered = {k: parsed.get(k) for k in important_fields if k in parsed}
-            jobs.append(filtered)
-        except Exception as e:
-            logging.warning(f"Failed to parse ClassAd: {e}")
-
-    return {"success": True, "jobs": jobs}
 
 
 # ---- TOOL: get_job_status ----
