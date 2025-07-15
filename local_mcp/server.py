@@ -108,11 +108,55 @@ def submit_job(submit_description: dict, tool_context=None) -> dict:
         logging.error(f"HTCondor submit failed: {e}", exc_info=True)
         return {"success": False, "message": str(e)}
 
+# ---- TOOL: count_jobs ----
+def count_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_context=None) -> dict:
+    """
+    Count total number of jobs in HTCondor, optionally filtered by owner or status.
+    Lightweight tool that only returns the count, not job data.
+    """
+    logging.info(f"HTCondor count query: owner={owner}, status={status}")
+    try:
+        schedd = htcondor.Schedd()
+        constraint_parts = []
+        if owner:
+            constraint_parts.append(f'Owner == "{owner}"')
+        if status:
+            status_map = {
+                'running': 2,
+                'idle': 1,
+                'held': 5,
+                'completed': 4,
+                'removed': 3,
+                'transferring_output': 6,
+                'suspended': 7
+            }
+            status_code = status_map.get(status.lower())
+            if status_code is not None:
+                constraint_parts.append(f'JobStatus == {status_code}')
+        constraint = ' and '.join(constraint_parts) if constraint_parts else "True"
+        ads = schedd.query(constraint)
+        total_count = len(ads)
+        return {
+            "success": True,
+            "total_jobs": total_count,
+            "filter": {
+                "owner": owner,
+                "status": status
+            }
+        }
+    except Exception as e:
+        logging.error(f"HTCondor count query failed: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": str(e)
+        }
+
 # Register ADK tools
 ADK_AF_TOOLS = {
     "list_jobs": FunctionTool(func=list_jobs),
     "get_job_status": FunctionTool(func=get_job_status),
     "submit_job": FunctionTool(func=submit_job),
+    "count_jobs": FunctionTool(func=count_jobs),
 }
 
 @app.list_tools()
