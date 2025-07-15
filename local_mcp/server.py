@@ -49,12 +49,14 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_co
             if status_code is not None:
                 constraint_parts.append(f'JobStatus == {status_code}')
         constraint = ' and '.join(constraint_parts) if constraint_parts else "True"
-        
         ads = schedd.query(constraint)
-        logging.info(f"HTCondor returned {len(ads)} jobs.")
+        total_jobs = len(ads)
+        jobs = [json.loads(ad.printJson()) for ad in ads[:10]]
+        logging.info(f"HTCondor returned {total_jobs} jobs. Showing first 10.")
         return {
             "success": True,
-            "jobs": [json.loads(ad.printJson()) for ad in ads]
+            "jobs": jobs,
+            "total_jobs": total_jobs
         }
     except Exception as e:
         logging.error(f"HTCondor query failed: {e}", exc_info=True)
