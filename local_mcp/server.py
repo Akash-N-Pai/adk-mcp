@@ -40,16 +40,32 @@ app = Server("htcondor-mcp-server")
 
 # Wrap database utility functions as ADK FunctionTools
 def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_context=None) -> dict:
-    """List all jobs in the queue, optionally filtered by owner."""
+    """List all jobs in the queue, optionally filtered by owner and/or status (e.g., running)."""
     schedd = htcondor.Schedd()
-    constraint = f'Owner == "{owner}"' if owner else "True"
+    constraint_parts = []
+    if owner:
+        constraint_parts.append(f'Owner == "{owner}"')
+    if status:
+        status_map = {
+            'running': 2,
+            'idle': 1,
+            'held': 5,
+            'completed': 4,
+            'removed': 3,
+            'transferring_output': 6,
+            'suspended': 7
+        }
+        status_code = status_map.get(status.lower())
+        if status_code is not None:
+            constraint_parts.append(f'JobStatus == {status_code}')
+    constraint = ' and '.join(constraint_parts) if constraint_parts else "True"
     jobs = schedd.query(constraint)
     return {
         "success": True,
         "jobs": [dict(job) for job in jobs]
     }
 
-def get_job_status(cluster_id: int) -> dict:
+def get_job_status(cluster_id: int, tool_context=None) -> dict:
     """Get status/details for a specific job."""
     schedd = htcondor.Schedd()
     jobs = schedd.query(f'ClusterId == {cluster_id}')
@@ -57,7 +73,7 @@ def get_job_status(cluster_id: int) -> dict:
         return {"success": False, "message": "Job not found"}
     return {"success": True, "job": dict(jobs[0])}
 
-def submit_job(submit_description: dict) -> dict:
+def submit_job(submit_description: dict, tool_context=None) -> dict:
     """Submit a new job to HTCondor."""
     schedd = htcondor.Schedd()
     submit = htcondor.Submit(submit_description)
