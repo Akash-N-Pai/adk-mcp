@@ -10,7 +10,6 @@ adk-mcp/
 │   ├── agent.py             # The ADK agent for HTCondor/ATLAS Facility
 │   ├── server.py            # The MCP server exposing HTCondor tools with session state
 │   ├── prompt.py            # Prompt instructions for the agent
-│   ├── mcp_server_activity.log # Log file for MCP server activity
 │   └── __init__.py
 ├── .env                   # For GOOGLE_API_KEY (ensure it's in .gitignore if repo is public)
 ├── requirements.txt       # Python dependencies
@@ -21,7 +20,7 @@ adk-mcp/
 ## Setup Instructions
 
 ### 1. Prerequisites
-- Python 3.8 or newer
+- Python 3.10 or newer
 - Access to a terminal or command prompt
 
 ### 2. Create and Activate Virtual Environment

@@ -2,4 +2,4 @@
 .venv/
 .pytest_cache/
 __pycache__/
-mcp_server_activity.log
+local_mcp/mcp_server_activity.log
