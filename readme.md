@@ -7,8 +7,8 @@ This project demonstrates an Agent Development Kit (ADK) agent that interacts wi
 ```
 adk-mcp/
 ├── local_mcp/
-│   ├── agent.py             # The ADK agent for the local SQLite DB
-│   ├── server.py            # The MCP server exposing database tools
+│   ├── agent.py             # The ADK agent for HTCondor/ATLAS Facility
+│   ├── server.py            # The MCP server exposing HTCondor tools with session state
 │   ├── prompt.py            # Prompt instructions for the agent
 │   ├── mcp_server_activity.log # Log file for MCP server activity
 │   └── __init__.py
