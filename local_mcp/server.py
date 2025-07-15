@@ -50,10 +50,27 @@ class SessionState:
 session_state = SessionState()
 
 # Wrap database utility functions as ADK FunctionTools
-def list_jobs(owner: str = None, tool_context=None) -> dict:
-    """List all jobs in the queue, optionally filtered by owner."""
+def list_jobs(owner: str = None, status: str = None, tool_context=None) -> dict:
+    """List jobs in the queue, optionally filtered by owner and/or status (e.g., running)."""
     schedd = htcondor.Schedd()
-    constraint = f'Owner == "{owner}"' if owner else "True"
+    constraint_parts = []
+    if owner:
+        constraint_parts.append(f'Owner == "{owner}"')
+    if status:
+        # Map status string to HTCondor JobStatus code
+        status_map = {
+            'running': 2,
+            'idle': 1,
+            'held': 5,
+            'completed': 4,
+            'removed': 3,
+            'transferring_output': 6,
+            'suspended': 7
+        }
+        status_code = status_map.get(status.lower())
+        if status_code is not None:
+            constraint_parts.append(f'JobStatus == {status_code}')
+    constraint = ' and '.join(constraint_parts) if constraint_parts else "True"
     jobs = schedd.query(constraint)
     
     # Update session state
@@ -62,6 +79,8 @@ def list_jobs(owner: str = None, tool_context=None) -> dict:
         tool_context.state.recent_jobs = [dict(job) for job in jobs]
         if owner:
             tool_context.state.active_filters['owner'] = owner
+        if status:
+            tool_context.state.active_filters['status'] = status
     
     return {
         "success": True,

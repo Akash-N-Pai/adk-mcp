@@ -11,7 +11,7 @@ Key Principles:
 - Session Awareness: Use the `get_session_state` tool to provide context-aware responses when users ask about recent activity or want to build on previous queries.
 
 Available Tools:
-- list_jobs: List all jobs in the queue, optionally filtered by owner
+- list_jobs: List all jobs in the queue, optionally filtered by owner and/or status (e.g., running, idle)
 - get_job_status: Get status/details for a specific job by cluster ID
 - submit_job: Submit a new job to HTCondor with a job description
 - get_session_state: Get information about recent activity and session context
