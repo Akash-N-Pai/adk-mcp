@@ -13,8 +13,10 @@ from mcp.server.models import InitializationOptions
 import htcondor
 from typing import Optional
 
+# Load environment variables (e.g. HTCondor config)
 load_dotenv()
 
+# Logging setup
 LOG_FILE_PATH = os.path.join(os.path.dirname(__file__), "mcp_server_activity.log")
 logging.basicConfig(
     level=logging.DEBUG,
@@ -22,64 +24,51 @@ logging.basicConfig(
     handlers=[logging.FileHandler(LOG_FILE_PATH, mode="w")],
 )
 
-logging.info("Creating MCP Server instance for HTCondor...")
+logging.info("Initializing HTCondor MCP Server...")
 app = Server("htcondor-mcp-server")
 
 
 def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_context=None) -> dict:
+    """
+    List jobs in HTCondor, optionally filtered by owner or status,
+    serialized fully via printJson() to avoid ExprTree issues.
+    """
     schedd = htcondor.Schedd()
     constraints = []
     if owner is not None:
         constraints.append(f'Owner == "{owner}"')
-    if status is not None:
-        status_map = {
+    if status:
+        code = {
             "running": 2, "idle": 1, "held": 5,
             "completed": 4, "removed": 3,
-            "transferring_output": 6, "suspended": 7,
-        }
-        code = status_map.get(status.lower())
+            "transferring_output": 6, "suspended": 7
+        }.get(status.lower())
         if code is not None:
             constraints.append(f"JobStatus == {code}")
     constraint = " and ".join(constraints) if constraints else "True"
 
-    # Only request JSON-safe fields
-    attrs = ["ClusterId", "ProcId", "JobStatus", "Owner", "QDate", "RemoteUserCpu"]
-    ads = schedd.query(constraint, projection=attrs)
-
-    def serialize_ad(ad):
-        result = {}
-        for a in attrs:
-            v = ad.get(a)
-            # Evaluate ExprTree to primitive (avoids JSON errors) :contentReference[oaicite:1]{index=1}
-            if hasattr(v, "eval"):
-                try:
-                    v = v.eval()
-                except Exception:
-                    v = None
-            result[a] = v
-        return result
-
-    return {"success": True, "jobs": [serialize_ad(ad) for ad in ads]}
+    ads = schedd.query(constraint)
+    jobs = [json.loads(ad.printJson()) for ad in ads]  # Clean JSON
+    
+    return {"success": True, "jobs": jobs}
 
 
 def get_job_status(cluster_id: int, tool_context=None) -> dict:
+    """
+    Retrieve a single job's full ad via printJson().
+    """
     schedd = htcondor.Schedd()
     ads = schedd.query(f"ClusterId == {cluster_id}")
     if not ads:
         return {"success": False, "message": "Job not found"}
-    ad = ads[0]
-    job = {}
-    for k, v in ad.items():
-        if hasattr(v, "eval"):
-            try:
-                v = v.eval()
-            except Exception:
-                v = None
-        job[k] = v
+    job = json.loads(ads[0].printJson())
     return {"success": True, "job": job}
 
 
 def submit_job(submit_description: dict, tool_context=None) -> dict:
+    """
+    Submit a new job via HTCondor and return its cluster ID.
+    """
     schedd = htcondor.Schedd()
     submit = htcondor.Submit(submit_description)
     with schedd.transaction() as txn:
@@ -87,6 +76,7 @@ def submit_job(submit_description: dict, tool_context=None) -> dict:
     return {"success": True, "cluster_id": cid}
 
 
+# Register ADK tools
 ADK_AF_TOOLS = {
     "list_jobs": FunctionTool(func=list_jobs),
     "get_job_status": FunctionTool(func=get_job_status),
@@ -96,51 +86,49 @@ ADK_AF_TOOLS = {
 
 @app.list_tools()
 async def list_mcp_tools() -> list[mcp_types.Tool]:
-    logging.info("Received list_tools request.")
-    schemas = []
+    logging.info("Responding to list_tools request")
+    tools = []
     for name, inst in ADK_AF_TOOLS.items():
         if not inst.name:
             inst.name = name
-        schema = adk_to_mcp_tool_type(inst)
-        schemas.append(schema)
-    return schemas
+        tools.append(adk_to_mcp_tool_type(inst))
+    return tools
 
 
 @app.call_tool()
 async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextContent]:
-    logging.info(f"call_tool for '{name}' args: {arguments}")
-    if name in ADK_AF_TOOLS:
-        inst = ADK_AF_TOOLS[name]
-        try:
-            resp = await inst.run_async(args=arguments, tool_context=None)
-            logging.info(f"Tool '{name}' success.")
-            return [mcp_types.TextContent(type="text", text=json.dumps(resp, indent=2))]
-        except Exception as e:
-            logging.error(f"Error executing '{name}': {e}", exc_info=True)
-            return [mcp_types.TextContent(type="text", text=json.dumps({
-                "success": False,
-                "message": str(e)
-            }))]
-    else:
-        return [mcp_types.TextContent(type="text", text=json.dumps({
-            "success": False,
-            "message": f"Tool '{name}' not found"
-        }))]
+    logging.info(f"Received call_tool: {name} with args {arguments}")
+    if name not in ADK_AF_TOOLS:
+        payload = {"success": False, "message": f"Tool '{name}' not found"}
+        return [mcp_types.TextContent(type="text", text=json.dumps(payload))]
+    inst = ADK_AF_TOOLS[name]
+    try:
+        resp = await inst.run_async(args=arguments, tool_context=None)
+        return [mcp_types.TextContent(type="text", text=json.dumps(resp, indent=2))]
+    except Exception as e:
+        logging.error(f"Error in '{name}': {e}", exc_info=True)
+        payload = {"success": False, "message": str(e)}
+        return [mcp_types.TextContent(type="text", text=json.dumps(payload))]
 
 
 async def run_mcp_stdio_server():
-    async with mcp.server.stdio.stdio_server() as (r, w):
+    async with mcp.server.stdio.stdio_server() as (reader, writer):
         logging.info("Starting MCP stdio server...")
-        await app.run(r, w, InitializationOptions(
-            server_name=app.name,
-            server_version="0.1.0",
-            capabilities=app.get_capabilities(notification_options=NotificationOptions(), experimental_capabilities={}),
-        ))
-        logging.info("STDIO session ended.")
+        await app.run(
+            reader,
+            writer,
+            InitializationOptions(
+                server_name=app.name,
+                server_version="0.1.0",
+                capabilities=app.get_capabilities(
+                    notification_options=NotificationOptions(), experimental_capabilities={}
+                ),
+            ),
+        )
+        logging.info("MCP stdio connection ended.")
 
 
 if __name__ == "__main__":
-    logging.info("Launching MCP Server...")
     try:
         asyncio.run(run_mcp_stdio_server())
     except KeyboardInterrupt:
