@@ -10,7 +10,6 @@ adk-mcp/
 │   ├── agent.py             # The ADK agent for the local SQLite DB
 │   ├── server.py            # The MCP server exposing database tools
 │   ├── prompt.py            # Prompt instructions for the agent
-│   ├── mcp_server_activity.log # Log file for MCP server activity
 │   └── __init__.py
 ├── .env                   # For GOOGLE_API_KEY (ensure it's in .gitignore if repo is public)
 ├── requirements.txt       # Python dependencies
