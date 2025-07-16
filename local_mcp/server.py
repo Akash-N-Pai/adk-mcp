@@ -12,6 +12,7 @@ from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 import htcondor
 from typing import Union, Optional
+from pydantic import BaseModel
 
 # Load environment variables (e.g. HTCondor config)
 load_dotenv()
@@ -213,13 +214,31 @@ def get_session_state(tool_context=None) -> dict:
             "message": str(e)
         }
 
-# Register ADK tools
+class ListJobsSchema(BaseModel):
+    owner: Optional[str] = None
+    status: Optional[str] = None
+    limit: int = 10
+
+class CountJobsSchema(BaseModel):
+    owner: Optional[str] = None
+    status: Optional[str] = None
+
+class GetJobStatusSchema(BaseModel):
+    cluster_id: int
+
+class SubmitJobSchema(BaseModel):
+    submit_description: dict
+
+class EmptySchema(BaseModel):
+    pass
+
+# Register ADK tools with schemas
 ADK_AF_TOOLS = {
-    "list_jobs": FunctionTool(func=list_jobs),
-    "get_job_status": FunctionTool(func=get_job_status),
-    "submit_job": FunctionTool(func=submit_job),
-    "count_jobs": FunctionTool(func=count_jobs),
-    "get_session_state": FunctionTool(func=get_session_state),
+    "list_jobs": FunctionTool(func=list_jobs, schema=ListJobsSchema),
+    "get_job_status": FunctionTool(func=get_job_status, schema=GetJobStatusSchema),
+    "submit_job": FunctionTool(func=submit_job, schema=SubmitJobSchema),
+    "count_jobs": FunctionTool(func=count_jobs, schema=CountJobsSchema),
+    "get_session_state": FunctionTool(func=get_session_state, schema=EmptySchema),
 }
 
 @app.list_tools()
