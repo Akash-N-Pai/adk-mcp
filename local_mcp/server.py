@@ -50,6 +50,16 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: 
     # Only return first 10 jobs to prevent token limit errors
     ads = ads[:limit]
 
+    status_code_map = {
+        1: "Idle",
+        2: "Running",
+        3: "Removed",
+        4: "Completed",
+        5: "Held",
+        6: "Transferring Output",
+        7: "Suspended"
+    }
+
     def serialize_ad(ad):
         result = {}
         for a in attrs:
@@ -61,6 +71,9 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: 
                 except Exception:
                     v = None
             result[a] = v
+        # Add human-readable status
+        status_num = result.get("JobStatus")
+        result["Status"] = status_code_map.get(status_num, "Unknown")
         return result
 
     return {
