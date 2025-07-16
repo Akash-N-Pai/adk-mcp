@@ -11,7 +11,7 @@ from mcp import types as mcp_types
 from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 import htcondor
-from typing import Union
+from typing import Union, Optional
 
 # Load environment variables (e.g. HTCondor config)
 load_dotenv()
@@ -28,39 +28,60 @@ logging.info("Initializing HTCondor MCP Server...")
 app = Server("htcondor-mcp-server")
 
 # ---- TOOL: list_jobs ----
-def list_jobs(owner: Union[str, None] = None, status: Union[str, None] = None, tool_context=None) -> dict:
+def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: int = 10, tool_context=None) -> dict:
     """
     List jobs in HTCondor, optionally filtered by owner or status.
-    Returns only the first 10 jobs, and includes total_jobs count.
-    All jobs are safely serialized using printJson().
+    Returns only the first `limit` jobs, and includes total_jobs count.
+    All jobs are safely serialized.
     """
-    logging.info(f"HTCondor query started: owner={owner}, status={status}")
     try:
         schedd = htcondor.Schedd()
-        constraint_parts = []
-        if owner:
-            constraint_parts.append(f'Owner == "{owner}"')
-        if status:
+        constraints = []
+        if owner is not None:
+            constraints.append(f'Owner == "{owner}"')
+        if status is not None:
             status_map = {
-                'running': 2,
-                'idle': 1,
-                'held': 5,
-                'completed': 4,
-                'removed': 3,
-                'transferring_output': 6,
-                'suspended': 7
+                "running": 2, "idle": 1, "held": 5,
+                "completed": 4, "removed": 3,
+                "transferring_output": 6, "suspended": 7,
             }
             status_code = status_map.get(status.lower())
             if status_code is not None:
-                constraint_parts.append(f'JobStatus == {status_code}')
-        constraint = ' and '.join(constraint_parts) if constraint_parts else "True"
-        ads = schedd.query(constraint)
+                constraints.append(f'JobStatus == {status_code}')
+        constraint = ' and '.join(constraints) if constraints else "True"
+        # Only request JSON-safe fields
+        attrs = ["ClusterId", "ProcId", "JobStatus", "Owner"]
+        ads = schedd.query(constraint, projection=attrs)
         total_jobs = len(ads)
-        # ✅ Safely serialize using printJson(), and only return first 10 jobs
-        jobs = [json.loads(ad.printJson()) for ad in ads[:10]]
+        # Only return first `limit` jobs to prevent token limit errors
+        ads = ads[:limit]
+        status_code_map = {
+            1: "Idle",
+            2: "Running",
+            3: "Removed",
+            4: "Completed",
+            5: "Held",
+            6: "Transferring Output",
+            7: "Suspended"
+        }
+        def serialize_ad(ad):
+            result = {}
+            for a in attrs:
+                v = ad.get(a)
+                # Evaluate ExprTree to primitive (avoids JSON errors)
+                if hasattr(v, "eval"):
+                    try:
+                        v = v.eval()
+                    except Exception:
+                        v = None
+                result[a] = v
+            # Add human-readable status
+            status_num = result.get("JobStatus")
+            result["Status"] = status_code_map.get(status_num, "Unknown")
+            return result
         return {
             "success": True,
-            "jobs": jobs,
+            "jobs": [serialize_ad(ad) for ad in ads],
             "total_jobs": total_jobs
         }
     except Exception as e:
@@ -71,12 +92,22 @@ def list_jobs(owner: Union[str, None] = None, status: Union[str, None] = None, t
         }
 
 # ---- TOOL: get_job_status ----
-def get_job_status(cluster_id: str, tool_context=None) -> dict:
+def get_job_status(cluster_id: int, tool_context=None) -> dict:
     """
     Get status of a specific job by cluster.proc (e.g., '6351153.61' or just '6351153').
     Safely serializes the job ad using printJson().
+    Adds a human-readable 'Status' field to the job dict.
     """
     schedd = htcondor.Schedd()
+    status_code_map = {
+        1: "Idle",
+        2: "Running",
+        3: "Removed",
+        4: "Completed",
+        5: "Held",
+        6: "Transferring Output",
+        7: "Suspended"
+    }
     try:
         if '.' in str(cluster_id):
             cluster, proc = str(cluster_id).split('.')
@@ -88,6 +119,9 @@ def get_job_status(cluster_id: str, tool_context=None) -> dict:
         if not ads:
             return {"success": False, "message": "Job not found"}
         job = json.loads(ads[0].printJson())
+        # Add human-readable status
+        status_num = job.get("JobStatus")
+        job["Status"] = status_code_map.get(status_num, "Unknown")
         return {"success": True, "job": job}
     except Exception as e:
         logging.error(f"Failed to get job status: {e}")
@@ -103,7 +137,8 @@ def submit_job(submit_description: dict, tool_context=None) -> dict:
         submit = htcondor.Submit(submit_description)
         with schedd.transaction() as txn:
             cid = submit.queue(txn)
-        return {"success": True, "cluster_id": cid}
+        # Echo back a summary of the submitted job description
+        return {"success": True, "cluster_id": cid, "job_summary": submit_description}
     except Exception as e:
         logging.error(f"HTCondor submit failed: {e}", exc_info=True)
         return {"success": False, "message": str(e)}
