@@ -26,7 +26,7 @@ logging.info("Creating MCP Server instance for HTCondor...")
 app = Server("htcondor-mcp-server")
 
 
-def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_context=None) -> dict:
+def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: int = 10, tool_context=None) -> dict:
     schedd = htcondor.Schedd()
     constraints = []
     if owner is not None:
@@ -43,14 +43,18 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_co
     constraint = " and ".join(constraints) if constraints else "True"
 
     # Only request JSON-safe fields
-    attrs = ["ClusterId", "ProcId", "JobStatus", "Owner", "QDate", "RemoteUserCpu"]
+    attrs = ["ClusterId", "ProcId", "JobStatus", "Owner"]
     ads = schedd.query(constraint, projection=attrs)
+    total_jobs = len(ads)
+    
+    # Only return first 10 jobs to prevent token limit errors
+    ads = ads[:limit]
 
     def serialize_ad(ad):
         result = {}
         for a in attrs:
             v = ad.get(a)
-            # Evaluate ExprTree to primitive (avoids JSON errors) :contentReference[oaicite:1]{index=1}
+            # Evaluate ExprTree to primitive (avoids JSON errors)
             if hasattr(v, "eval"):
                 try:
                     v = v.eval()
@@ -59,7 +63,11 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, tool_co
             result[a] = v
         return result
 
-    return {"success": True, "jobs": [serialize_ad(ad) for ad in ads]}
+    return {
+        "success": True, 
+        "jobs": [serialize_ad(ad) for ad in ads],
+        "total_jobs": total_jobs
+    }
 
 
 def get_job_status(cluster_id: int, tool_context=None) -> dict:
