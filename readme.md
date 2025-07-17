@@ -116,8 +116,8 @@ Job submitted successfully! New ClusterId: 2345678
 ## 🧠 Architecture Overview
 
 - **Agent (`local_mcp/agent.py`):**
-    - Loads environment variables from `.env` (supports `GOOGLE_API_KEY`, `MCP_SERVER_HOST`, `MCP_SERVER_PORT`).
-    - Connects to the MCP server using TCP (host/port configurable).
+    - Loads environment variables from `.env` (requires `GOOGLE_API_KEY`).
+    - Launches the MCP server (`local_mcp/server.py`) as a subprocess using stdio for communication.
     - Uses the Gemini model and a custom prompt for job management.
 - **MCP Server (`local_mcp/server.py`):**
     - Exposes tools for job listing, status, and submission via HTCondor.
