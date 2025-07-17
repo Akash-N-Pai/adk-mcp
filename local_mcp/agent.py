@@ -1,14 +1,21 @@
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, TcpServerParameters
 
 from local_mcp.prompt import DB_MCP_PROMPT
 
-# IMPORTANT: Dynamically compute the absolute path to your server.py script
-# The ADK agent for HTCondor/ATLAS Facility with session state management
-PATH_TO_YOUR_MCP_SERVER_SCRIPT = str((Path(__file__).parent / "server.py").resolve())
+# Load environment variables from .env if present
+load_dotenv()
 
+# Read MCP server host/port from environment variables for flexibility
+MCP_SERVER_HOST = os.getenv("MCP_SERVER_HOST", "localhost")  # Default to localhost for dev
+MCP_SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", 8001))    # Default port 8001
+
+# Why: Using TcpServerParameters allows the agent to connect to a remote MCP server (e.g., on ATLAS Facility)
+# instead of spawning a local process. This is necessary for production and more flexible for deployment.
 
 root_agent = LlmAgent(
     model="gemini-2.0-flash",
@@ -16,11 +23,10 @@ root_agent = LlmAgent(
     instruction=DB_MCP_PROMPT,
     tools=[
         MCPToolset(
-            connection_params=StdioServerParameters(
-                command="python3",
-                args=[PATH_TO_YOUR_MCP_SERVER_SCRIPT],
+            connection_params=TcpServerParameters(
+                host=MCP_SERVER_HOST,
+                port=MCP_SERVER_PORT,
             )
-            # tool_filter=['list_tables'] # Optional: ensure only specific tools are loaded
         )
     ],
 )
