@@ -23,6 +23,9 @@ echo "GOOGLE_API_KEY=your_gemini_api_key_here" > .env
 # Run tests
 make test
 
+# Run eval
+make eval-full  
+
 # Start agent (web interface)
 make run-agent
 ```
