@@ -1,5 +1,44 @@
+# Environment and virtual environment
 .env
 .venv/
-.pytest_cache/
+venv/
+
+# Python cache
 __pycache__/
+*.pyc
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project-specific files
 local_mcp/mcp_server_activity.log
+evaluation_results/
+*.json
+*.txt
+!requirements*.txt
+!pytest.ini
+!readme.md
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
