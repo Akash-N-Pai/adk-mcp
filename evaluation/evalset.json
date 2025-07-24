@@ -1,0 +1,177 @@
+[
+  {
+    "query": "Show me all jobs.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": null, "status": null}}
+    ],
+    "reference": "Jobs in the queue: | ClusterId | ProcId | Status | Owner | ..."
+  },
+  {
+    "query": "List all running jobs for user alice.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "alice", "status": "running"}}
+    ],
+    "reference": "Jobs for user alice (Running): | ClusterId | ProcId | Status | Owner | ..."
+  },
+  {
+    "query": "Show idle jobs.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": null, "status": "idle"}}
+    ],
+    "reference": "Idle jobs: | ClusterId | ProcId | Status | Owner | ..."
+  },
+  {
+    "query": "Show jobs for user bob.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "bob", "status": null}}
+    ],
+    "reference": "Jobs for user bob: | ClusterId | ProcId | Status | Owner | ..."
+  },
+  {
+    "query": "Show held jobs for user alice.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "alice", "status": "held"}}
+    ],
+    "reference": "Jobs for user alice (Held): | ClusterId | ProcId | Status | Owner | ..."
+  },
+  {
+    "query": "Show me jobs with an invalid status.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": null, "status": "foobar"}}
+    ],
+    "reference": "No jobs found or error: Invalid status 'foobar'."
+  },
+  {
+    "query": "Show jobs for a non-existent user xyz.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "xyz", "status": null}}
+    ],
+    "reference": "No jobs found for user xyz."
+  },
+  {
+    "query": "What's the status of job 1234567?",
+    "expected_tool_use": [
+      {"tool_name": "get_job_status", "tool_input": {"cluster_id": 1234567}}
+    ],
+    "reference": "Job 1234567 status: - Owner: ... - Status: ... - ProcId: ..."
+  },
+  {
+    "query": "Get status for job 9999999.",
+    "expected_tool_use": [
+      {"tool_name": "get_job_status", "tool_input": {"cluster_id": 9999999}}
+    ],
+    "reference": "Job not found or error: No job with ClusterId 9999999."
+  },
+  {
+    "query": "Get status for job with missing id.",
+    "expected_tool_use": [
+      {"tool_name": "get_job_status", "tool_input": {}}
+    ],
+    "reference": "Error: cluster_id is required."
+  },
+  {
+    "query": "Submit a job to run /bin/sleep 100.",
+    "expected_tool_use": [
+      {"tool_name": "submit_job", "tool_input": {"submit_description": {"executable": "/bin/sleep", "arguments": "100"}}}
+    ],
+    "reference": "Job submitted successfully! New ClusterId: ..."
+  },
+  {
+    "query": "Submit a job with missing executable.",
+    "expected_tool_use": [
+      {"tool_name": "submit_job", "tool_input": {"submit_description": {"arguments": "100"}}}
+    ],
+    "reference": "Error: 'executable' is required to submit a job."
+  },
+  {
+    "query": "Submit a job with invalid arguments.",
+    "expected_tool_use": [
+      {"tool_name": "submit_job", "tool_input": {"submit_description": {"executable": "/bin/false", "arguments": "--badflag"}}}
+    ],
+    "reference": "Job submitted, but may fail due to invalid arguments."
+  },
+  {
+    "query": "Submit a job with all fields.",
+    "expected_tool_use": [
+      {"tool_name": "submit_job", "tool_input": {"submit_description": {"executable": "/bin/echo", "arguments": "hello world", "output": "echo.out", "error": "echo.err", "log": "echo.log"}}}
+    ],
+    "reference": "Job submitted successfully! New ClusterId: ..."
+  },
+  {
+    "query": "Show me the last 5 jobs for user alice.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "alice", "status": null, "limit": 5}}
+    ],
+    "reference": "Jobs for user alice (last 5): | ClusterId | ProcId | Status | Owner | ..."
+  },
+  {
+    "query": "Show me all completed jobs.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": null, "status": "completed"}}
+    ],
+    "reference": "Completed jobs: | ClusterId | ProcId | Status | Owner | ..."
+  },
+  {
+    "query": "Show me all jobs with status 2.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": null, "status": "2"}}
+    ],
+    "reference": "Error or jobs with status code 2 (Running)."
+  },
+  {
+    "query": "Show me jobs for user alice with status running and limit 2.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "alice", "status": "running", "limit": 2}}
+    ],
+    "reference": "Jobs for user alice (Running, limit 2): | ClusterId | ProcId | Status | Owner | ..."
+  },
+  {
+    "query": "Get status for job with non-integer id abc.",
+    "expected_tool_use": [
+      {"tool_name": "get_job_status", "tool_input": {"cluster_id": "abc"}}
+    ],
+    "reference": "Error: cluster_id must be an integer."
+  },
+  {
+    "query": "Submit a job with empty description.",
+    "expected_tool_use": [
+      {"tool_name": "submit_job", "tool_input": {"submit_description": {}}}
+    ],
+    "reference": "Error: 'executable' is required to submit a job."
+  },
+  {
+    "query": "Show me jobs for user alice with an ambiguous status.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "alice", "status": "active"}}
+    ],
+    "reference": "Error or jobs for ambiguous status 'active'."
+  },
+  {
+    "query": "Show me all jobs for user alice and status running and held.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "alice", "status": "running,held"}}
+    ],
+    "reference": "Error: Multiple statuses not supported."
+  },
+  {
+    "query": "Show me jobs for user alice with a very high limit.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "alice", "status": null, "limit": 1000}}
+    ],
+    "reference": "Jobs for user alice (first 1000 or capped at max allowed): | ClusterId | ProcId | Status | Owner | ..."
+  },
+  {
+    "query": "Submit a job with a non-existent executable.",
+    "expected_tool_use": [
+      {"tool_name": "submit_job", "tool_input": {"submit_description": {"executable": "/bin/doesnotexist", "arguments": "foo"}}}
+    ],
+    "reference": "Job submission failed or job will fail to start."
+  },
+  {
+    "query": "Show me all jobs for user alice with status removed.",
+    "expected_tool_use": [
+      {"tool_name": "list_jobs", "tool_input": {"owner": "alice", "status": "removed"}}
+    ],
+    "reference": "Jobs for user alice (Removed): | ClusterId | ProcId | Status | Owner | ..."
+  }
+] 
