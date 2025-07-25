@@ -28,11 +28,13 @@ dist/
 Thumbs.db
 
 # Project-specific files
+*.json
 !evaluation/evalset.json
 !evaluation/evalset_fixed.json
+!evaluation/evalset_strict.json
 local_mcp/mcp_server_activity.log
 evaluation_results/
-*.json
+#*.json
 *.txt
 !requirements*.txt
 !pytest.ini
