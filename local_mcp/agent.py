@@ -3,7 +3,7 @@ from pathlib import Path
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
 
-from local_mcp.prompt import DB_MCP_PROMPT
+from .prompt import DB_MCP_PROMPT
 
 # IMPORTANT: Dynamically compute the absolute path to your server.py script
 # The ADK agent for HTCondor/ATLAS Facility with session state management
