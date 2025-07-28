@@ -43,8 +43,7 @@ adk-mcp/
 │   ├── __init__.py
 │   └── mcp_server_activity.log # Server activity log (auto-generated)
 ├── tests/
-│   ├── test_agent_integration.py # Integration tests for agent/server
-│   ├── test_mcp_server.py        # Unit tests for MCP server tools
+│   ├── test_htcondor_mcp_comprehensive.py # Comprehensive test suite
 │   └── __init__.py
 ├── evaluation/
 │   ├── evaluation.py          # Evaluation framework and scenarios
@@ -142,11 +141,11 @@ make test-cov        # Run tests with coverage report
 ```
 
 - **Test files:**
-    - `tests/test_agent_integration.py`: Integration tests for agent/server communication and configuration.
-    - `tests/test_mcp_server.py`: Unit tests for MCP server tool logic and error handling.
+    - `tests/test_htcondor_mcp_comprehensive.py`: Comprehensive test suite covering all functionality including basic operations, advanced features, and agent integration.
 
 ### **Evaluation Framework**
 
+#### **Custom Evaluation (Legacy)**
 ```bash
 make eval-full                # Run full evaluation suite
 python -m evaluation.evaluation --category job_listing
@@ -154,11 +153,21 @@ python -m evaluation.evaluation --full
 python -m evaluation.evaluation --list   # List all scenarios
 ```
 
-- **Scenarios:**
-    - Job listing and filtering
-    - Job status queries
-    - Job submission workflows
-    - Error handling
+#### **ADK Evaluation (Recommended)**
+```bash
+make adk-eval                 # Run ADK evaluation
+make adk-eval-verbose         # Run with verbose output
+make adk-eval-custom          # Run with custom paths
+python evaluation/adk_evaluation.py --help  # See all options
+```
+
+- **ADK Evaluation Set:** 22 comprehensive test cases covering:
+    - Job listing and filtering (8 cases)
+    - Job status queries (4 cases) 
+    - Job submission workflows (6 cases)
+    - Error handling (4 cases)
+- **ADK Compatible:** Works with official ADK evaluation framework
+- **Detailed Reports:** JSON reports with tool usage and response quality metrics
 - **Categories:** `job_listing`, `job_status`, `job_submission`, `error_handling`
 - **Difficulties:** `easy`, `medium`, etc.
 
@@ -233,6 +242,7 @@ pip install -r requirements.txt
 
 - **Prompt & Principles:** See `local_mcp/prompt.py` for agent instructions and example interactions.
 - **Evaluation Framework:** See `evaluation/evaluation.py` for scenario structure and CLI options.
+- **ADK Evaluation:** See `evaluation/README.md` for ADK-compatible evaluation framework.
 - **Server Tools:** See `local_mcp/server.py` for tool implementations and status code mapping.
 
 ---

@@ -29,9 +29,7 @@ Thumbs.db
 
 # Project-specific files
 *.json
-!evaluation/evalset.json
-!evaluation/evalset_fixed.json
-!evaluation/evalset_strict.json
+!evaluation/adk_evalset.json
 local_mcp/mcp_server_activity.log
 evaluation_results/
 #*.json
