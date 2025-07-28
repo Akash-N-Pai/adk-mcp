@@ -130,31 +130,54 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
                     v = None
             job_info[k] = v
         
-        # Simulate history events based on current job state
+        # Get actual job timestamps and create realistic history
+        q_date = job_info.get("QDate")  # Queue date (submission time)
+        job_start_date = job_info.get("JobStartDate")  # When job started
+        job_current_start_date = job_info.get("JobCurrentStartDate")  # Current start time
+        completion_date = job_info.get("CompletionDate")  # When job completed
+        
         history_events = []
-        job_status = job_info.get("JobStatus")
-        if job_status == 4:  # Completed
-            history_events = [
-                {"timestamp": "2024-01-01 10:00:00", "event": "Job submitted", "status": "Idle"},
-                {"timestamp": "2024-01-01 10:05:00", "event": "Job started", "status": "Running"},
-                {"timestamp": "2024-01-01 11:00:00", "event": "Job completed", "status": "Completed"}
-            ]
-        elif job_status == 2:  # Running
-            history_events = [
-                {"timestamp": "2024-01-01 10:00:00", "event": "Job submitted", "status": "Idle"},
-                {"timestamp": "2024-01-01 10:05:00", "event": "Job started", "status": "Running"}
-            ]
-        else:
-            history_events = [
-                {"timestamp": "2024-01-01 10:00:00", "event": "Job submitted", "status": "Idle"}
-            ]
+        
+        # Add submission event
+        if q_date:
+            history_events.append({
+                "timestamp": datetime.datetime.fromtimestamp(q_date).isoformat(),
+                "event": "Job submitted",
+                "status": "Idle"
+            })
+        
+        # Add start event
+        if job_start_date or job_current_start_date:
+            start_time = job_current_start_date or job_start_date
+            history_events.append({
+                "timestamp": datetime.datetime.fromtimestamp(start_time).isoformat(),
+                "event": "Job started",
+                "status": "Running"
+            })
+        
+        # Add completion event if job is completed
+        if job_info.get("JobStatus") == 4 and completion_date:  # Completed
+            history_events.append({
+                "timestamp": datetime.datetime.fromtimestamp(completion_date).isoformat(),
+                "event": "Job completed",
+                "status": "Completed"
+            })
+        
+        # If no real timestamps, provide current status info
+        if not history_events:
+            history_events.append({
+                "timestamp": datetime.datetime.now().isoformat(),
+                "event": "Current status",
+                "status": job_info.get("JobStatus", "Unknown")
+            })
         
         return {
             "success": True,
             "cluster_id": cluster_id,
-            "current_status": job_status,
+            "current_status": job_info.get("JobStatus"),
             "history_events": history_events[:limit],
-            "total_events": len(history_events)
+            "total_events": len(history_events),
+            "note": "History based on actual job timestamps from HTCondor"
         }
     except Exception as e:
         return {"success": False, "message": f"Error retrieving job history: {str(e)}"}
@@ -171,23 +194,42 @@ def get_job_requirements(cluster_id: int, tool_context=None) -> dict:
         ad = ads[0]
         requirements = {}
         
-        # Extract common requirement fields
-        req_fields = ["Requirements", "Rank", "RequestCpus", "RequestMemory", 
-                     "RequestDisk", "JobPrio", "NiceUser"]
+        # Extract common requirement fields with better field mapping
+        req_fields = {
+            "Requirements": "Requirements",
+            "Rank": "Rank", 
+            "RequestCpus": "RequestCpus",
+            "RequestMemory": "RequestMemory",
+            "RequestDisk": "RequestDisk",
+            "JobPrio": "JobPrio",
+            "NiceUser": "NiceUser",
+            "RequestGpus": "RequestGpus",
+            "RequestMemoryMB": "RequestMemoryMB",
+            "RequestDiskMB": "RequestDiskMB"
+        }
         
-        for field in req_fields:
-            v = ad.get(field)
+        for display_name, field_name in req_fields.items():
+            v = ad.get(field_name)
             if hasattr(v, "eval"):
                 try:
                     v = v.eval()
                 except Exception:
                     v = None
-            requirements[field] = v
+            if v is not None:
+                requirements[display_name] = v
+        
+        # Add some computed fields for better understanding
+        if "RequestMemory" in requirements and requirements["RequestMemory"]:
+            requirements["RequestMemoryMB"] = requirements["RequestMemory"]
+        
+        if "RequestDisk" in requirements and requirements["RequestDisk"]:
+            requirements["RequestDiskMB"] = requirements["RequestDisk"]
         
         return {
             "success": True,
             "cluster_id": cluster_id,
-            "requirements": requirements
+            "requirements": requirements,
+            "note": "Requirements extracted from actual HTCondor job attributes"
         }
     except Exception as e:
         return {"success": False, "message": f"Error retrieving job requirements: {str(e)}"}
@@ -220,10 +262,23 @@ def get_job_environment(cluster_id: int, tool_context=None) -> dict:
         else:
             env_vars = {}
         
+        # Also get other environment-related fields
+        other_env_fields = ["Cmd", "Arguments", "Input", "Output", "Error", "Log"]
+        for field in other_env_fields:
+            v = ad.get(field)
+            if hasattr(v, "eval"):
+                try:
+                    v = v.eval()
+                except Exception:
+                    v = None
+            if v is not None:
+                env_vars[f"HTCONDOR_{field}"] = v
+        
         return {
             "success": True,
             "cluster_id": cluster_id,
-            "environment_variables": env_vars
+            "environment_variables": env_vars,
+            "note": "Environment variables extracted from actual HTCondor job attributes"
         }
     except Exception as e:
         return {"success": False, "message": f"Error retrieving job environment: {str(e)}"}
