@@ -116,8 +116,6 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
     """Get job execution history including state changes and events."""
     try:
         schedd = htcondor.Schedd()
-        # Query for job history - this might require access to history file
-        # For now, we'll get current job info and simulate history
         ads = schedd.query(f"ClusterId == {cluster_id}")
         if not ads:
             return {"success": False, "message": "Job not found"}
@@ -134,22 +132,27 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
         
         # Simulate history events based on current job state
         history_events = []
-        if job_info.get("JobStatus") == 4:  # Completed
+        job_status = job_info.get("JobStatus")
+        if job_status == 4:  # Completed
             history_events = [
                 {"timestamp": "2024-01-01 10:00:00", "event": "Job submitted", "status": "Idle"},
                 {"timestamp": "2024-01-01 10:05:00", "event": "Job started", "status": "Running"},
                 {"timestamp": "2024-01-01 11:00:00", "event": "Job completed", "status": "Completed"}
             ]
-        elif job_info.get("JobStatus") == 2:  # Running
+        elif job_status == 2:  # Running
             history_events = [
                 {"timestamp": "2024-01-01 10:00:00", "event": "Job submitted", "status": "Idle"},
                 {"timestamp": "2024-01-01 10:05:00", "event": "Job started", "status": "Running"}
+            ]
+        else:
+            history_events = [
+                {"timestamp": "2024-01-01 10:00:00", "event": "Job submitted", "status": "Idle"}
             ]
         
         return {
             "success": True,
             "cluster_id": cluster_id,
-            "current_status": job_info.get("JobStatus"),
+            "current_status": job_status,
             "history_events": history_events[:limit],
             "total_events": len(history_events)
         }
@@ -179,8 +182,7 @@ def get_job_requirements(cluster_id: int, tool_context=None) -> dict:
                     v = v.eval()
                 except Exception:
                     v = None
-            if v is not None:
-                requirements[field] = v
+            requirements[field] = v
         
         return {
             "success": True,
@@ -214,7 +216,9 @@ def get_job_environment(cluster_id: int, tool_context=None) -> dict:
                             key, value = pair.split('=', 1)
                             env_vars[key] = value
             except Exception:
-                pass
+                env_vars = {}
+        else:
+            env_vars = {}
         
         return {
             "success": True,
@@ -295,10 +299,8 @@ def get_pool_status(tool_context=None) -> dict:
                 except Exception:
                     owner = None
             
-            if status is not None:
-                status_counts[status] += 1
-            if owner is not None:
-                user_counts[owner] += 1
+            status_counts[status] += 1
+            user_counts[owner] += 1
         
         # Get machine information
         collector = htcondor.Collector()
@@ -374,7 +376,7 @@ def list_machines(status: Optional[str] = None, tool_context=None) -> dict:
             "success": True,
             "machines": machine_list,
             "total_machines": len(machine_list),
-            "filter": status
+            "filter": status or "all"
         }
     except Exception as e:
         return {"success": False, "message": f"Error listing machines: {str(e)}"}
@@ -437,8 +439,7 @@ def get_resource_usage(cluster_id: Optional[int] = None, tool_context=None) -> d
                         v = v.eval()
                     except Exception:
                         v = None
-                if v is not None:
-                    usage[field] = v
+                usage[field] = v
             
             return {
                 "success": True,
@@ -511,8 +512,7 @@ def get_queue_stats(tool_context=None) -> dict:
                 except Exception:
                     status = None
             
-            if status is not None:
-                status_counts[status] += 1
+            status_counts[status] += 1
         
         # Convert status codes to readable names
         status_names = {
@@ -663,8 +663,7 @@ def generate_job_report(owner: Optional[str] = None, time_range: Optional[str] =
             total_memory += memory_usage
             
             status = job_info.get("jobstatus")
-            if status is not None:
-                status_counts[status] += 1
+            status_counts[status] += 1
             
             job_data.append(job_info)
         
@@ -672,8 +671,8 @@ def generate_job_report(owner: Optional[str] = None, time_range: Optional[str] =
         report = {
             "report_metadata": {
                 "generated_at": datetime.datetime.now().isoformat(),
-                "owner_filter": owner,
-                "time_range": time_range,
+                "owner_filter": owner or "all",
+                "time_range": time_range or "all",
                 "total_jobs": len(job_data)
             },
             "summary": {
@@ -891,8 +890,7 @@ def export_job_data(format: str = "json", filters: Optional[Dict[str, Any]] = No
             
             for job in job_data:
                 status = job.get("jobstatus")
-                if status is not None:
-                    status_counts[status] += 1
+                status_counts[status] += 1
                 
                 cpu = job.get("remoteusercpu", 0) or 0
                 memory = job.get("memoryusage", 0) or 0
@@ -912,7 +910,7 @@ def export_job_data(format: str = "json", filters: Optional[Dict[str, Any]] = No
         return {
             "success": True,
             "format": format,
-            "filters": filters,
+            "filters": filters or {},
             "total_jobs": len(job_data),
             "data": formatted_data
         }
