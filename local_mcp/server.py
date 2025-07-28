@@ -246,25 +246,56 @@ def get_job_environment(cluster_id: int, tool_context=None) -> dict:
         ad = ads[0]
         env_vars = {}
         
-        # Get environment variables
+        # Get environment variables - try multiple approaches
         env = ad.get("Environment")
         if hasattr(env, "eval"):
             try:
                 env_str = env.eval()
                 if env_str:
-                    # Parse environment string (format: "VAR1=value1 VAR2=value2")
+                    # Try to parse environment string more robustly
+                    # Handle quoted strings and spaces in values
+                    env_str = env_str.strip()
+                    if env_str.startswith('"') and env_str.endswith('"'):
+                        env_str = env_str[1:-1]  # Remove outer quotes
+                    
+                    # Split on space but be careful with quoted values
+                    import re
+                    # This regex handles: VAR=value VAR2="value with spaces" VAR3=simple
+                    pattern = r'(\w+)=(?:"([^"]*)"|([^\s]*))'
+                    matches = re.findall(pattern, env_str)
+                    
+                    for match in matches:
+                        var_name = match[0]
+                        var_value = match[1] if match[1] else match[2]
+                        env_vars[var_name] = var_value
+                        
+            except Exception as e:
+                # If regex parsing fails, try simple approach
+                try:
+                    # Simple space-based splitting as fallback
                     for pair in env_str.split():
                         if '=' in pair:
                             key, value = pair.split('=', 1)
                             env_vars[key] = value
-            except Exception:
-                env_vars = {}
+                except Exception:
+                    env_vars = {}
         else:
             env_vars = {}
         
-        # Also get other environment-related fields
-        other_env_fields = ["Cmd", "Arguments", "Input", "Output", "Error", "Log"]
-        for field in other_env_fields:
+        # Get job configuration fields (these are always available)
+        job_config_fields = {
+            "Cmd": "Command",
+            "Arguments": "Arguments", 
+            "Input": "Input File",
+            "Output": "Output File",
+            "Error": "Error File",
+            "Log": "Log File",
+            "WorkingDir": "Working Directory",
+            "JobUniverse": "Job Universe",
+            "JobStatus": "Job Status"
+        }
+        
+        for field, display_name in job_config_fields.items():
             v = ad.get(field)
             if hasattr(v, "eval"):
                 try:
@@ -272,13 +303,17 @@ def get_job_environment(cluster_id: int, tool_context=None) -> dict:
                 except Exception:
                     v = None
             if v is not None:
-                env_vars[f"HTCONDOR_{field}"] = v
+                env_vars[f"JOB_{display_name.replace(' ', '_')}"] = v
+        
+        # Add some computed fields for better understanding
+        if not env_vars:
+            env_vars["NOTE"] = "No custom environment variables found. Showing job configuration instead."
         
         return {
             "success": True,
             "cluster_id": cluster_id,
             "environment_variables": env_vars,
-            "note": "Environment variables extracted from actual HTCondor job attributes"
+            "note": "Environment variables and job configuration extracted from actual HTCondor job attributes"
         }
     except Exception as e:
         return {"success": False, "message": f"Error retrieving job environment: {str(e)}"}
