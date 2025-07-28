@@ -218,12 +218,42 @@ def get_job_requirements(cluster_id: int, tool_context=None) -> dict:
             if v is not None:
                 requirements[display_name] = v
         
-        # Add some computed fields for better understanding
+        # Add human-readable descriptions and remove duplicates
+        if "JobStatus" in requirements:
+            status_map = {
+                1: "Idle", 2: "Running", 3: "Removed", 4: "Completed",
+                5: "Held", 6: "Transferring Output", 7: "Suspended"
+            }
+            status_code = requirements["JobStatus"]
+            requirements["JobStatus"] = f"{status_code} ({status_map.get(status_code, 'Unknown')})"
+        
+        if "JobUniverse" in requirements:
+            universe_map = {
+                1: "Standard", 2: "Pipes", 3: "Linda", 4: "PVM",
+                5: "Vanilla", 6: "Scheduler", 7: "MPI", 9: "Grid",
+                10: "Java", 11: "Parallel", 12: "Local", 13: "Docker"
+            }
+            universe_code = requirements["JobUniverse"]
+            requirements["JobUniverse"] = f"{universe_code} ({universe_map.get(universe_code, 'Unknown')})"
+        
+        # Format memory and disk with units
         if "RequestMemory" in requirements and requirements["RequestMemory"]:
-            requirements["RequestMemoryMB"] = requirements["RequestMemory"]
+            mem_value = requirements["RequestMemory"]
+            if mem_value >= 1024:
+                requirements["RequestMemory"] = f"{mem_value} MB ({mem_value//1024} GB)"
+            else:
+                requirements["RequestMemory"] = f"{mem_value} MB"
         
         if "RequestDisk" in requirements and requirements["RequestDisk"]:
-            requirements["RequestDiskMB"] = requirements["RequestDisk"]
+            disk_value = requirements["RequestDisk"]
+            if disk_value >= 1024:
+                requirements["RequestDisk"] = f"{disk_value} MB ({disk_value//1024} GB)"
+            else:
+                requirements["RequestDisk"] = f"{disk_value} MB"
+        
+        # Remove duplicate fields
+        requirements.pop("RequestMemoryMB", None)
+        requirements.pop("RequestDiskMB", None)
         
         return {
             "success": True,
@@ -303,6 +333,25 @@ def get_job_environment(cluster_id: int, tool_context=None) -> dict:
                 except Exception:
                     v = None
             if v is not None:
+                # Format special fields
+                if field == "JobStatus":
+                    status_map = {
+                        1: "Idle", 2: "Running", 3: "Removed", 4: "Completed",
+                        5: "Held", 6: "Transferring Output", 7: "Suspended"
+                    }
+                    v = f"{v} ({status_map.get(v, 'Unknown')})"
+                elif field == "JobUniverse":
+                    universe_map = {
+                        1: "Standard", 2: "Pipes", 3: "Linda", 4: "PVM",
+                        5: "Vanilla", 6: "Scheduler", 7: "MPI", 9: "Grid",
+                        10: "Java", 11: "Parallel", 12: "Local", 13: "Docker"
+                    }
+                    v = f"{v} ({universe_map.get(v, 'Unknown')})"
+                elif field == "Arguments" and not v:
+                    v = "(none)"
+                elif field in ["Input", "Output", "Error", "Log"] and not v:
+                    v = "(default)"
+                
                 env_vars[f"JOB_{display_name.replace(' ', '_')}"] = v
         
         # Add some computed fields for better understanding
