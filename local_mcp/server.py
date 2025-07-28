@@ -923,10 +923,10 @@ ADK_AF_TOOLS = {
     "get_job_status": FunctionTool(func=get_job_status),
     "submit_job": FunctionTool(func=submit_job),
     
-    # Advanced Job Information - temporarily disabled for debugging
-    # "get_job_history": FunctionTool(func=get_job_history),
-    # "get_job_requirements": FunctionTool(func=get_job_requirements),
-    # "get_job_environment": FunctionTool(func=get_job_environment),
+    # Advanced Job Information
+    "get_job_history": FunctionTool(func=get_job_history),
+    "get_job_requirements": FunctionTool(func=get_job_requirements),
+    "get_job_environment": FunctionTool(func=get_job_environment),
     
     # Cluster and Pool Information - temporarily disabled for debugging
     # "list_pools": FunctionTool(func=list_pools),
