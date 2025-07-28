@@ -13,7 +13,7 @@ from mcp import types as mcp_types
 from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 import htcondor
-from typing import Optional, Dict, List, Any
+from typing import Optional
 
 load_dotenv()
 
@@ -825,7 +825,7 @@ def get_utilization_stats(time_range: Optional[str] = "24h", tool_context=None) 
         return {"success": False, "message": f"Error getting utilization stats: {str(e)}"}
 
 
-def export_job_data(format: str = "json", filters: Optional[Dict[str, Any]] = None, tool_context=None) -> dict:
+def export_job_data(format: str = "json", filters: Optional[dict] = None, tool_context=None) -> dict:
     """Export job data in various formats."""
     try:
         schedd = htcondor.Schedd()
@@ -923,26 +923,26 @@ ADK_AF_TOOLS = {
     "get_job_status": FunctionTool(func=get_job_status),
     "submit_job": FunctionTool(func=submit_job),
     
-    # Advanced Job Information
-    "get_job_history": FunctionTool(func=get_job_history),
-    "get_job_requirements": FunctionTool(func=get_job_requirements),
-    "get_job_environment": FunctionTool(func=get_job_environment),
+    # Advanced Job Information - temporarily disabled for debugging
+    # "get_job_history": FunctionTool(func=get_job_history),
+    # "get_job_requirements": FunctionTool(func=get_job_requirements),
+    # "get_job_environment": FunctionTool(func=get_job_environment),
     
-    # Cluster and Pool Information
-    "list_pools": FunctionTool(func=list_pools),
-    "get_pool_status": FunctionTool(func=get_pool_status),
-    "list_machines": FunctionTool(func=list_machines),
-    "get_machine_status": FunctionTool(func=get_machine_status),
+    # Cluster and Pool Information - temporarily disabled for debugging
+    # "list_pools": FunctionTool(func=list_pools),
+    # "get_pool_status": FunctionTool(func=get_pool_status),
+    # "list_machines": FunctionTool(func=list_machines),
+    # "get_machine_status": FunctionTool(func=get_machine_status),
     
-    # Resource Monitoring
-    "get_resource_usage": FunctionTool(func=get_resource_usage),
-    "get_queue_stats": FunctionTool(func=get_queue_stats),
-    "get_system_load": FunctionTool(func=get_system_load),
+    # Resource Monitoring - temporarily disabled for debugging
+    # "get_resource_usage": FunctionTool(func=get_resource_usage),
+    # "get_queue_stats": FunctionTool(func=get_queue_stats),
+    # "get_system_load": FunctionTool(func=get_system_load),
     
-    # Reporting and Analytics
-    "generate_job_report": FunctionTool(func=generate_job_report),
-    "get_utilization_stats": FunctionTool(func=get_utilization_stats),
-    "export_job_data": FunctionTool(func=export_job_data),
+    # Reporting and Analytics - temporarily disabled for debugging
+    # "generate_job_report": FunctionTool(func=generate_job_report),
+    # "get_utilization_stats": FunctionTool(func=get_utilization_stats),
+    # "export_job_data": FunctionTool(func=export_job_data),
 }
 
 
@@ -951,10 +951,17 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
     logging.info("Received list_tools request.")
     schemas = []
     for name, inst in ADK_AF_TOOLS.items():
-        if not inst.name:
-            inst.name = name
-        schema = adk_to_mcp_tool_type(inst)
-        schemas.append(schema)
+        try:
+            if not inst.name:
+                inst.name = name
+            logging.info(f"Converting tool schema for: {name}")
+            schema = adk_to_mcp_tool_type(inst)
+            schemas.append(schema)
+            logging.info(f"Successfully converted tool schema for: {name}")
+        except Exception as e:
+            logging.error(f"Error converting tool schema for '{name}': {e}", exc_info=True)
+            # Skip this tool if it fails to convert
+            continue
     return schemas
 
 
