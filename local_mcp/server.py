@@ -15,8 +15,14 @@ from mcp.server.models import InitializationOptions
 import htcondor
 from typing import Optional
 
-# Import simplified session management
-from .session import SessionManager
+# Import simplified session management - handle both relative and absolute imports
+try:
+    from .session import SessionManager
+except ImportError:
+    # When running server.py directly, use absolute import
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+    from local_mcp.session import SessionManager
 
 load_dotenv()
 
