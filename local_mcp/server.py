@@ -15,6 +15,9 @@ from mcp.server.models import InitializationOptions
 import htcondor
 from typing import Optional
 
+# Import simplified session management
+from .session import SessionManager
+
 load_dotenv()
 
 LOG_FILE_PATH = os.path.join(os.path.dirname(__file__), "mcp_server_activity.log")
@@ -27,8 +30,39 @@ logging.basicConfig(
 logging.info("Creating MCP Server instance for HTCondor...")
 app = Server("htcondor-mcp-server")
 
+# Initialize session management
+session_manager = SessionManager()
+
+def get_session_context(tool_context=None):
+    """Extract session context from tool context."""
+    if tool_context and isinstance(tool_context, dict):
+        return tool_context.get('session_id'), tool_context.get('user_id')
+    return None, None
+
+def log_tool_call(session_id, user_id, tool_name, arguments, result):
+    """Log tool call to conversation history."""
+    if session_id and session_manager.validate_session(session_id):
+        try:
+            tool_call_data = {
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "result": result
+            }
+            session_manager.add_message(session_id, "tool_call", str(tool_call_data))
+        except Exception as e:
+            logging.error(f"Failed to log tool call: {e}")
 
 def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: int = 10, tool_context=None) -> dict:
+    session_id, user_id = get_session_context(tool_context)
+    
+    # Use user preferences for default limit if available
+    if session_id and session_manager.validate_session(session_id):
+        context = session_manager.get_session_context(session_id)
+        if context and not isinstance(context, dict):
+            user_prefs = context.get('preferences', {})
+            if not limit:
+                limit = user_prefs.get('default_job_limit', 10)
+    
     schedd = htcondor.Schedd()
     constraints = []
     if owner is not None:
@@ -78,18 +112,28 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: 
         result["Status"] = status_code_map.get(status_num, "Unknown")
         return result
 
-    return {
+    result = {
         "success": True, 
         "jobs": [serialize_ad(ad) for ad in ads],
         "total_jobs": total_jobs
     }
+    
+    # Log the tool call
+    log_tool_call(session_id, user_id, "list_jobs", {"owner": owner, "status": status, "limit": limit}, result)
+    
+    return result
 
 
 def get_job_status(cluster_id: int, tool_context=None) -> dict:
+    session_id, user_id = get_session_context(tool_context)
+    
     schedd = htcondor.Schedd()
     ads = schedd.query(f"ClusterId == {cluster_id}")
     if not ads:
-        return {"success": False, "message": "Job not found"}
+        result = {"success": False, "message": "Job not found"}
+        log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
+        return result
+    
     ad = ads[0]
     job = {}
     for k, v in ad.items():
@@ -99,26 +143,38 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
             except Exception:
                 v = None
         job[k] = v
-    return {"success": True, "job": job}
+    
+    result = {"success": True, "job": job}
+    log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
+    return result
 
 
 def submit_job(submit_description: dict, tool_context=None) -> dict:
+    session_id, user_id = get_session_context(tool_context)
+    
     schedd = htcondor.Schedd()
     submit = htcondor.Submit(submit_description)
     with schedd.transaction() as txn:
         cid = submit.queue(txn)
-    return {"success": True, "cluster_id": cid}
+    
+    result = {"success": True, "cluster_id": cid}
+    log_tool_call(session_id, user_id, "submit_job", {"submit_description": submit_description}, result)
+    return result
 
 
 # ===== ADVANCED JOB INFORMATION =====
 
 def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict:
     """Get job execution history including state changes and events."""
+    session_id, user_id = get_session_context(tool_context)
+    
     try:
         schedd = htcondor.Schedd()
         ads = schedd.query(f"ClusterId == {cluster_id}")
         if not ads:
-            return {"success": False, "message": "Job not found"}
+            result = {"success": False, "message": "Job not found"}
+            log_tool_call(session_id, user_id, "get_job_history", {"cluster_id": cluster_id, "limit": limit}, result)
+            return result
         
         ad = ads[0]
         job_info = {}
@@ -171,7 +227,7 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
                 "status": job_info.get("JobStatus", "Unknown")
             })
         
-        return {
+        result = {
             "success": True,
             "cluster_id": cluster_id,
             "current_status": job_info.get("JobStatus"),
@@ -179,17 +235,27 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
             "total_events": len(history_events),
             "note": "History based on actual job timestamps from HTCondor"
         }
+        
+        log_tool_call(session_id, user_id, "get_job_history", {"cluster_id": cluster_id, "limit": limit}, result)
+        return result
+        
     except Exception as e:
-        return {"success": False, "message": f"Error retrieving job history: {str(e)}"}
+        result = {"success": False, "message": f"Error retrieving job history: {str(e)}"}
+        log_tool_call(session_id, user_id, "get_job_history", {"cluster_id": cluster_id, "limit": limit}, result)
+        return result
 
 
 def get_job_requirements(cluster_id: int, tool_context=None) -> dict:
     """Get job requirements and constraints."""
+    session_id, user_id = get_session_context(tool_context)
+    
     try:
         schedd = htcondor.Schedd()
         ads = schedd.query(f"ClusterId == {cluster_id}")
         if not ads:
-            return {"success": False, "message": "Job not found"}
+            result = {"success": False, "message": "Job not found"}
+            log_tool_call(session_id, user_id, "get_job_requirements", {"cluster_id": cluster_id}, result)
+            return result
         
         ad = ads[0]
         requirements = {}
@@ -255,23 +321,33 @@ def get_job_requirements(cluster_id: int, tool_context=None) -> dict:
         requirements.pop("RequestMemoryMB", None)
         requirements.pop("RequestDiskMB", None)
         
-        return {
+        result = {
             "success": True,
             "cluster_id": cluster_id,
             "requirements": requirements,
             "note": "Requirements extracted from actual HTCondor job attributes"
         }
+        
+        log_tool_call(session_id, user_id, "get_job_requirements", {"cluster_id": cluster_id}, result)
+        return result
+        
     except Exception as e:
-        return {"success": False, "message": f"Error retrieving job requirements: {str(e)}"}
+        result = {"success": False, "message": f"Error retrieving job requirements: {str(e)}"}
+        log_tool_call(session_id, user_id, "get_job_requirements", {"cluster_id": cluster_id}, result)
+        return result
 
 
 def get_job_environment(cluster_id: int, tool_context=None) -> dict:
     """Get job environment variables."""
+    session_id, user_id = get_session_context(tool_context)
+    
     try:
         schedd = htcondor.Schedd()
         ads = schedd.query(f"ClusterId == {cluster_id}")
         if not ads:
-            return {"success": False, "message": "Job not found"}
+            result = {"success": False, "message": "Job not found"}
+            log_tool_call(session_id, user_id, "get_job_environment", {"cluster_id": cluster_id}, result)
+            return result
         
         ad = ads[0]
         env_vars = {}
@@ -358,14 +434,79 @@ def get_job_environment(cluster_id: int, tool_context=None) -> dict:
         if not env_vars:
             env_vars["NOTE"] = "No custom environment variables found. Showing job configuration instead."
         
-        return {
+        result = {
             "success": True,
             "cluster_id": cluster_id,
             "environment_variables": env_vars,
             "note": "Environment variables and job configuration extracted from actual HTCondor job attributes"
         }
+        
+        log_tool_call(session_id, user_id, "get_job_environment", {"cluster_id": cluster_id}, result)
+        return result
+        
     except Exception as e:
-        return {"success": False, "message": f"Error retrieving job environment: {str(e)}"}
+        result = {"success": False, "message": f"Error retrieving job environment: {str(e)}"}
+        log_tool_call(session_id, user_id, "get_job_environment", {"cluster_id": cluster_id}, result)
+        return result
+
+
+# ===== SIMPLE SESSION MANAGEMENT TOOLS =====
+
+def create_session(user_id: str, metadata: Optional[dict] = None, tool_context=None) -> dict:
+    """Create a new session for a user."""
+    try:
+        session_id = session_manager.create_session(user_id, metadata)
+        return {
+            "success": True,
+            "session_id": session_id,
+            "user_id": user_id,
+            "message": f"Session created successfully for user {user_id}"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to create session: {str(e)}"
+        }
+
+def get_session_info(session_id: str, tool_context=None) -> dict:
+    """Get information about a session."""
+    try:
+        if not session_manager.validate_session(session_id):
+            return {
+                "success": False,
+                "message": "Invalid or expired session"
+            }
+        
+        context = session_manager.get_session_context(session_id)
+        return {
+            "success": True,
+            "session_info": context
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to get session info: {str(e)}"
+        }
+
+def end_session(session_id: str, tool_context=None) -> dict:
+    """End a session."""
+    try:
+        if session_manager.validate_session(session_id):
+            session_manager.deactivate_session(session_id)
+            return {
+                "success": True,
+                "message": "Session ended successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Session not found or already inactive"
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to end session: {str(e)}"
+        }
 
 
 # ===== CLUSTER AND POOL INFORMATION =====
@@ -1067,6 +1208,11 @@ ADK_AF_TOOLS = {
     "get_job_requirements": FunctionTool(func=get_job_requirements),
     "get_job_environment": FunctionTool(func=get_job_environment),
     
+    # Simple Session Management Tools
+    "create_session": FunctionTool(func=create_session),
+    "get_session_info": FunctionTool(func=get_session_info),
+    "end_session": FunctionTool(func=end_session),
+    
     # Cluster and Pool Information - temporarily disabled for debugging
     # "list_pools": FunctionTool(func=list_pools),
     # "get_pool_status": FunctionTool(func=get_pool_status),
@@ -1107,10 +1253,20 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
 @app.call_tool()
 async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextContent]:
     logging.info(f"call_tool for '{name}' args: {arguments}")
+    
+    # Extract session context from arguments if present
+    session_id = arguments.pop('session_id', None)
+    user_id = arguments.pop('user_id', None)
+    tool_context = {'session_id': session_id, 'user_id': user_id} if session_id else None
+    
     if name in ADK_AF_TOOLS:
         inst = ADK_AF_TOOLS[name]
         try:
-            resp = await inst.run_async(args=arguments, tool_context=None)
+            # Add tool_context to arguments
+            if tool_context:
+                arguments['tool_context'] = tool_context
+            
+            resp = await inst.run_async(args=arguments, tool_context=tool_context)
             logging.info(f"Tool '{name}' success.")
             return [mcp_types.TextContent(type="text", text=json.dumps(resp, indent=2))]
         except Exception as e:
