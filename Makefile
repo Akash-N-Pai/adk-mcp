@@ -42,16 +42,16 @@ install-dev:
 
 # Testing
 test:
-	pytest
+	pytest tests/test_htcondor_mcp_comprehensive.py
 
 test-unit:
-	pytest tests/ -m "not integration"
+	pytest tests/test_htcondor_mcp_comprehensive.py -m "not integration"
 
 test-integration:
-	pytest tests/ -m integration
+	pytest tests/test_htcondor_mcp_comprehensive.py -m integration
 
 test-cov:
-	pytest --cov=local_mcp --cov=evaluation --cov-report=html --cov-report=term
+	pytest tests/test_htcondor_mcp_comprehensive.py --cov=local_mcp --cov=evaluation --cov-report=html --cov-report=term
 
 # Code Quality
 lint:
@@ -79,6 +79,22 @@ eval-scenario:
 
 list-scenarios:
 	python -m evaluation.evaluation --list
+
+# ADK Evaluation
+adk-eval:
+	python evaluation/adk_evaluation.py
+
+adk-eval-verbose:
+	python evaluation/adk_evaluation.py --verbose
+
+adk-eval-custom:
+	@read -p "Enter evaluation set path: " evalset; \
+	@read -p "Enter report path: " report; \
+	python evaluation/adk_evaluation.py --evalset $$evalset --report $$report
+
+# Agent Integration Testing
+test-agent-integration:
+	pytest tests/test_htcondor_mcp_comprehensive.py::TestAgentIntegration -v
 
 # Maintenance
 clean:

@@ -1,0 +1,559 @@
+{
+  "eval_set_id": "htcondor_mcp_adk_eval_v1",
+  "eval_set_name": "HTCondor MCP Agent ADK Evaluation Set",
+  "description": "Comprehensive evaluation set for HTCondor MCP agent covering job listing, status queries, job submission, advanced job information, cluster/pool information, resource monitoring, and reporting/analytics on ATLAS AF.",
+  "version": "1.0.0",
+  "eval_cases": [
+    {
+      "name": "Basic Job Listing",
+      "description": "Test basic job listing functionality without filters",
+      "data": [
+        {
+          "query": "Show me all jobs",
+          "expected_tool_use": [
+            {
+              "tool_name": "list_jobs",
+              "tool_input": {
+                "owner": null,
+                "status": null,
+                "limit": 10
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "Jobs in the queue",
+            "ClusterId",
+            "ProcId", 
+            "Status",
+            "Owner"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Job Listing by Owner",
+      "description": "Test job listing filtered by specific user",
+      "data": [
+        {
+          "query": "Show jobs for user alice",
+          "expected_tool_use": [
+            {
+              "tool_name": "list_jobs",
+              "tool_input": {
+                "owner": "alice",
+                "status": null,
+                "limit": 10
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "Jobs for user alice",
+            "alice"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Job Listing by Status",
+      "description": "Test job listing filtered by job status",
+      "data": [
+        {
+          "query": "Show running jobs",
+          "expected_tool_use": [
+            {
+              "tool_name": "list_jobs",
+              "tool_input": {
+                "owner": null,
+                "status": "running",
+                "limit": 10
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "Running jobs",
+            "Running"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Job Listing with Combined Filters",
+      "description": "Test job listing with both owner and status filters",
+      "data": [
+        {
+          "query": "Show running jobs for user bob",
+          "expected_tool_use": [
+            {
+              "tool_name": "list_jobs",
+              "tool_input": {
+                "owner": "bob",
+                "status": "running",
+                "limit": 10
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "Jobs for user bob",
+            "Running",
+            "bob"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Get Job Status",
+      "description": "Test getting detailed status for a specific job",
+      "data": [
+        {
+          "query": "What's the status of job 1234567?",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_job_status",
+              "tool_input": {
+                "cluster_id": 1234567
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "Job 1234567",
+            "status"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Submit Job",
+      "description": "Test job submission functionality",
+      "data": [
+        {
+          "query": "Submit a job to run /bin/sleep 100",
+          "expected_tool_use": [
+            {
+              "tool_name": "submit_job",
+              "tool_input": {
+                "submit_description": {
+                  "executable": "/bin/sleep",
+                  "arguments": "100"
+                }
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "Job submitted",
+            "ClusterId"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Advanced Job Information - History",
+      "description": "Test job history retrieval",
+      "data": [
+        {
+          "query": "Show me the history for job 1234567",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_job_history",
+              "tool_input": {
+                "cluster_id": 1234567,
+                "limit": 50
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "history",
+            "events",
+            "1234567"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Advanced Job Information - Requirements",
+      "description": "Test job requirements retrieval",
+      "data": [
+        {
+          "query": "What are the requirements for job 1234567?",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_job_requirements",
+              "tool_input": {
+                "cluster_id": 1234567
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "requirements",
+            "1234567"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Advanced Job Information - Environment",
+      "description": "Test job environment variables retrieval",
+      "data": [
+        {
+          "query": "Show me the environment variables for job 1234567",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_job_environment",
+              "tool_input": {
+                "cluster_id": 1234567
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "environment",
+            "variables",
+            "1234567"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cluster and Pool Information - List Pools",
+      "description": "Test listing available HTCondor pools",
+      "data": [
+        {
+          "query": "List all available HTCondor pools",
+          "expected_tool_use": [
+            {
+              "tool_name": "list_pools",
+              "tool_input": {}
+            }
+          ],
+          "expected_response_substrings": [
+            "pools",
+            "collector"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cluster and Pool Information - Pool Status",
+      "description": "Test getting overall pool status and statistics",
+      "data": [
+        {
+          "query": "Show me the overall pool status",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_pool_status",
+              "tool_input": {}
+            }
+          ],
+          "expected_response_substrings": [
+            "statistics",
+            "jobs",
+            "machines"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cluster and Pool Information - List Machines",
+      "description": "Test listing execution machines",
+      "data": [
+        {
+          "query": "Show me all available machines",
+          "expected_tool_use": [
+            {
+              "tool_name": "list_machines",
+              "tool_input": {
+                "status": "available"
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "machines",
+            "available"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cluster and Pool Information - Machine Status",
+      "description": "Test getting detailed machine status",
+      "data": [
+        {
+          "query": "What's the status of machine node01.example.com?",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_machine_status",
+              "tool_input": {
+                "machine_name": "node01.example.com"
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "node01.example.com",
+            "status"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Resource Monitoring - Job Resource Usage",
+      "description": "Test getting resource usage for specific job",
+      "data": [
+        {
+          "query": "What resources is job 1234567 using?",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_resource_usage",
+              "tool_input": {
+                "cluster_id": 1234567
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "resource",
+            "usage",
+            "1234567"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Resource Monitoring - Overall Resource Usage",
+      "description": "Test getting overall resource usage statistics",
+      "data": [
+        {
+          "query": "Show me the overall resource usage",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_resource_usage",
+              "tool_input": {}
+            }
+          ],
+          "expected_response_substrings": [
+            "overall",
+            "usage",
+            "cpu",
+            "memory"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Resource Monitoring - Queue Statistics",
+      "description": "Test getting queue statistics",
+      "data": [
+        {
+          "query": "Show me the queue statistics",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_queue_stats",
+              "tool_input": {}
+            }
+          ],
+          "expected_response_substrings": [
+            "queue",
+            "statistics",
+            "jobs"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Resource Monitoring - System Load",
+      "description": "Test getting system load information",
+      "data": [
+        {
+          "query": "What's the current system load?",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_system_load",
+              "tool_input": {}
+            }
+          ],
+          "expected_response_substrings": [
+            "system",
+            "load",
+            "machines",
+            "cpus"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reporting and Analytics - Job Report",
+      "description": "Test generating comprehensive job reports",
+      "data": [
+        {
+          "query": "Generate a report for user alice's jobs from the last 24 hours",
+          "expected_tool_use": [
+            {
+              "tool_name": "generate_job_report",
+              "tool_input": {
+                "owner": "alice",
+                "time_range": "24h"
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "report",
+            "alice",
+            "24h"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reporting and Analytics - Utilization Stats",
+      "description": "Test getting resource utilization statistics",
+      "data": [
+        {
+          "query": "Show me utilization statistics for the last 7 days",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_utilization_stats",
+              "tool_input": {
+                "time_range": "7d"
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "utilization",
+            "statistics",
+            "7d"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reporting and Analytics - Export Data JSON",
+      "description": "Test exporting job data in JSON format",
+      "data": [
+        {
+          "query": "Export all running jobs as JSON",
+          "expected_tool_use": [
+            {
+              "tool_name": "export_job_data",
+              "tool_input": {
+                "format": "json",
+                "filters": {
+                  "status": "running"
+                }
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "export",
+            "json",
+            "running"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reporting and Analytics - Export Data CSV",
+      "description": "Test exporting job data in CSV format",
+      "data": [
+        {
+          "query": "Export all completed jobs as CSV",
+          "expected_tool_use": [
+            {
+              "tool_name": "export_job_data",
+              "tool_input": {
+                "format": "csv",
+                "filters": {
+                  "status": "completed"
+                }
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "export",
+            "csv",
+            "completed"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reporting and Analytics - Export Data Summary",
+      "description": "Test exporting job data summary",
+      "data": [
+        {
+          "query": "Show me a summary of all jobs",
+          "expected_tool_use": [
+            {
+              "tool_name": "export_job_data",
+              "tool_input": {
+                "format": "summary",
+                "filters": {}
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "summary",
+            "jobs",
+            "statistics"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Complex Query - System Overview",
+      "description": "Test complex query combining multiple tools",
+      "data": [
+        {
+          "query": "Give me a complete overview of the HTCondor system including jobs, machines, and resources",
+          "expected_tool_use": [
+            {
+              "tool_name": "get_pool_status",
+              "tool_input": {}
+            },
+            {
+              "tool_name": "get_system_load",
+              "tool_input": {}
+            },
+            {
+              "tool_name": "get_queue_stats",
+              "tool_input": {}
+            }
+          ],
+          "expected_response_substrings": [
+            "overview",
+            "system",
+            "jobs",
+            "machines",
+            "resources"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Complex Query - User Analysis",
+      "description": "Test complex query for user analysis",
+      "data": [
+        {
+          "query": "Analyze user bob's job performance including resource usage and completion rates",
+          "expected_tool_use": [
+            {
+              "tool_name": "generate_job_report",
+              "tool_input": {
+                "owner": "bob",
+                "time_range": "7d"
+              }
+            },
+            {
+              "tool_name": "get_utilization_stats",
+              "tool_input": {
+                "time_range": "7d"
+              }
+            }
+          ],
+          "expected_response_substrings": [
+            "analysis",
+            "bob",
+            "performance",
+            "resource",
+            "completion"
+          ]
+        }
+      ]
+    }
+  ]
+} 

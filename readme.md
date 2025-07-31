@@ -1,6 +1,6 @@
-# ADK Agent MCP Server
+# HTCondor MCP Agent for ATLAS Facility
 
-This project demonstrates an Agent Development Kit (ADK) agent that interacts with the ATLAS Facility via HTCondor using a local Model Context Protocol (MCP) server. The MCP server exposes tools to query, monitor, and submit jobs to the facility, and the agent uses these tools to fulfill user requests with context-aware, session-based responses.
+A comprehensive Agent Development Kit (ADK) agent that provides advanced HTCondor management capabilities for the ATLAS Facility. The agent uses a local Model Context Protocol (MCP) server to interact with HTCondor, offering job management, resource monitoring, reporting, and analytics functionality.
 
 ---
 
@@ -16,15 +16,14 @@ git clone <repository-url>
 cd adk-mcp
 make install-dev
 
-# Set up API key and (optionally) MCP server host/port
+# Set up API key
 echo "GOOGLE_API_KEY=your_gemini_api_key_here" > .env
-# Optionally set MCP_SERVER_HOST and MCP_SERVER_PORT in .env
 
 # Run tests
 make test
 
-# Run eval
-make eval-full  
+# Run evaluation
+make adk-eval
 
 # Start agent (web interface)
 make run-agent
@@ -37,17 +36,19 @@ make run-agent
 ```
 adk-mcp/
 ├── local_mcp/
-│   ├── agent.py               # The ADK agent for HTCondor/ATLAS Facility
-│   ├── server.py              # The MCP server exposing HTCondor tools
-│   ├── prompt.py              # Prompt instructions for the agent
+│   ├── agent.py               # ADK agent with comprehensive HTCondor tools
+│   ├── server.py              # MCP server with 15 advanced tools
+│   ├── prompt.py              # Comprehensive prompt with all functionality
 │   ├── __init__.py
 │   └── mcp_server_activity.log # Server activity log (auto-generated)
 ├── tests/
-│   ├── test_agent_integration.py # Integration tests for agent/server
-│   ├── test_mcp_server.py        # Unit tests for MCP server tools
+│   ├── test_htcondor_mcp_comprehensive.py # Comprehensive test suite (50+ tests)
 │   └── __init__.py
 ├── evaluation/
-│   ├── evaluation.py          # Evaluation framework and scenarios
+│   ├── adk_evalset.json       # ADK evaluation set (30+ test cases)
+│   ├── adk_evaluation.py      # ADK evaluation runner
+│   ├── test_agent_integration.py # Integration testing script
+│   ├── README.md              # Evaluation framework documentation
 │   └── __init__.py
 ├── requirements.txt           # Production dependencies
 ├── requirements-dev.txt       # Development dependencies
@@ -58,109 +59,159 @@ adk-mcp/
 
 ---
 
-## 🛠️ Available Tools (via MCP Server)
+## 🛠️ Available Tools (15 MCP Tools)
 
-The MCP server exposes these tools for the ADK agent:
+The MCP server exposes comprehensive tools for HTCondor management:
 
-- **`list_jobs(owner: str = None, status: str = None, limit: int = 10) -> dict`**: Lists jobs in the queue, optionally filtered by owner or status. Returns only the first `limit` jobs (default 10) and includes `total_jobs` count.
-- **`get_job_status(cluster_id: int) -> dict`**: Retrieves the status/details for a specific job by cluster ID.
-- **`submit_job(submit_description: dict) -> dict`**: Submits a new job to HTCondor. The description should include at least `executable` and optionally `arguments`, `output`, `error`, `log`, etc.
+### Basic Job Management
+- **`list_jobs(owner, status, limit)`**: List jobs with filtering options
+- **`get_job_status(cluster_id)`**: Get detailed status for specific job
+- **`submit_job(submit_description)`**: Submit new jobs to HTCondor
 
-All tools return a `success` flag and relevant data or error messages.
+### Advanced Job Information
+- **`get_job_history(cluster_id, limit)`**: Get job execution history and events
+- **`get_job_requirements(cluster_id)`**: Get job requirements and constraints
+- **`get_job_environment(cluster_id)`**: Get job environment variables
+
+### Cluster and Pool Information
+- **`list_pools()`**: List available HTCondor pools
+- **`get_pool_status()`**: Get overall pool status and statistics
+- **`list_machines(status)`**: List execution machines with status filtering
+- **`get_machine_status(machine_name)`**: Get detailed machine status
+
+### Resource Monitoring
+- **`get_resource_usage(cluster_id)`**: Get resource usage (specific job or overall)
+- **`get_queue_stats()`**: Get queue statistics by job status
+- **`get_system_load()`**: Get overall system load and capacity
+
+### Reporting and Analytics
+- **`generate_job_report(owner, time_range)`**: Generate comprehensive job reports
+- **`get_utilization_stats(time_range)`**: Get resource utilization statistics
+- **`export_job_data(format, filters)`**: Export job data (JSON/CSV/Summary)
+
+All tools return structured JSON responses with success flags and relevant data.
 
 ---
 
-## 🤖 Agent & Prompt Principles
+## 🤖 Agent Capabilities
 
-The agent is configured in `local_mcp/agent.py` and uses a prompt (`local_mcp/prompt.py`) that enforces these principles:
+The agent provides intelligent HTCondor management with these capabilities:
 
-- **Prioritize Action:** Use the relevant tool immediately when a user's request implies a job management operation.
-- **Smart Defaults:**
-    - For `get_job_status`, provide the `cluster_id` if available, or ask for clarification.
-    - For `list_jobs`, if `owner` is not specified, list all jobs.
-    - For `submit_job`, ask for missing required fields.
-- **Minimize Clarification:** Only ask clarifying questions if the user's intent is ambiguous.
-- **User-Friendly Output:**
-    - For job lists, output a table with headers (ClusterId, ProcId, Status, Owner) and map status codes to human-readable words (e.g., 1=Idle, 2=Running, 5=Held, etc.).
-    - For single job status, provide a summary of key fields in plain language.
-    - For job submission, confirm the action and show the new job's ID.
-- **Error Handling:** If a tool fails, explain the error in simple terms and suggest next steps.
+### Job Management
+- **Smart Filtering**: Filter jobs by owner, status, time ranges
+- **Batch Operations**: Handle multiple jobs efficiently
+- **Status Tracking**: Monitor job states and transitions
+- **Resource Monitoring**: Track CPU, memory, and disk usage
 
-**Example Interactions:**
+### System Monitoring
+- **Pool Management**: Monitor HTCondor pools and collectors
+- **Machine Status**: Track execution nodes and availability
+- **Resource Analytics**: Analyze system utilization and performance
+- **Capacity Planning**: Understand available resources
 
+### Reporting and Analytics
+- **Comprehensive Reports**: Generate detailed job and system reports
+- **Time-based Analysis**: Analyze performance over different time periods
+- **Data Export**: Export data in multiple formats for external analysis
+- **Utilization Metrics**: Track resource efficiency and bottlenecks
+
+### Advanced Features
+- **Job History**: Track job lifecycle and state changes
+- **Requirements Analysis**: Understand job constraints and needs
+- **Environment Management**: Monitor job execution environments
+- **Error Handling**: Robust error handling and recovery
+
+---
+
+## 📊 Example Interactions
+
+### Basic Job Management
 ```
 User: Show me all running jobs for user alice.
-Agent: (calls list_jobs with owner="alice", status="running")
+Agent: [Calls list_jobs with owner="alice", status="running"]
 Output:
 Jobs for user alice (Running):
 | ClusterId | ProcId | Status  | Owner  |
 |-----------|--------|---------|--------|
 | 1234567   | 0      | Running | alice  |
 | 1234568   | 0      | Running | alice  |
-Total jobs shown: 2 (out of 10 max displayed)
-
-User: What's the status of job 1234567?
-Agent: (calls get_job_status with cluster_id=1234567)
-Output:
-Job 1234567 status:
-- Owner: alice
-- Status: Running
-- ProcId: 0
-- ...
-
-User: Submit a job with this description...
-Agent: (calls submit_job with provided description)
-Output:
-Job submitted successfully! New ClusterId: 2345678
+Total jobs shown: 2
 ```
 
----
+### Advanced Monitoring
+```
+User: What's the current system load and available resources?
+Agent: [Calls get_system_load]
+Output:
+System Load Summary:
+- Total Machines: 50
+- Total CPUs: 200
+- Available CPUs: 45
+- Total Memory: 800GB
+- Available Memory: 180GB
+- Utilization: 77.5%
+```
 
-## 🧠 Architecture Overview
+### Reporting and Analytics
+```
+User: Generate a report for user bob's jobs from the last 7 days.
+Agent: [Calls generate_job_report with owner="bob", time_range="7d"]
+Output:
+Job Report for user bob (Last 7 days):
+- Total Jobs: 15
+- Status Distribution: Running: 3, Completed: 10, Held: 2
+- Total CPU Time: 45.2 hours
+- Total Memory Usage: 2.1GB
+- Average CPU per Job: 3.0 hours
+```
 
-- **Agent (`local_mcp/agent.py`):**
-    - Loads environment variables from `.env` (requires `GOOGLE_API_KEY`).
-    - Launches the MCP server (`local_mcp/server.py`) as a subprocess using stdio for communication.
-    - Uses the Gemini model and a custom prompt for job management.
-- **MCP Server (`local_mcp/server.py`):**
-    - Exposes tools for job listing, status, and submission via HTCondor.
-    - Handles requests from the agent and returns JSON-serializable results.
-    - Logs activity to `mcp_server_activity.log`.
-    - Can be run as a standalone process if needed.
+### Resource Monitoring
+```
+User: What resources is job 1234567 using?
+Agent: [Calls get_resource_usage with cluster_id=1234567]
+Output:
+Resource Usage for Job 1234567:
+- CPU Time: 2.5 hours
+- Memory Usage: 512MB
+- Disk Usage: 1.2GB
+- Committed Time: 3.1 hours
+```
 
 ---
 
 ## 🧪 Testing & Evaluation
 
-### **Testing**
-
+### Comprehensive Testing
 ```bash
-make test            # Run all tests
-make test-unit       # Run unit tests only
-make test-integration # Run integration tests only
-make test-cov        # Run tests with coverage report
+make test                    # Run all tests (50+ test cases)
+make test-unit              # Run unit tests only
+make test-integration       # Run integration tests only
+make test-cov               # Run tests with coverage report
+make test-agent-integration # Test agent integration specifically
 ```
 
-- **Test files:**
-    - `tests/test_agent_integration.py`: Integration tests for agent/server communication and configuration.
-    - `tests/test_mcp_server.py`: Unit tests for MCP server tool logic and error handling.
-
-### **Evaluation Framework**
-
+### ADK Evaluation Framework
 ```bash
-make eval-full                # Run full evaluation suite
-python -m evaluation.evaluation --category job_listing
-python -m evaluation.evaluation --full
-python -m evaluation.evaluation --list   # List all scenarios
+make adk-eval               # Run ADK evaluation (30+ test cases)
+make adk-eval-verbose       # Run with verbose output
+make adk-eval-custom        # Run with custom paths
 ```
 
-- **Scenarios:**
-    - Job listing and filtering
-    - Job status queries
-    - Job submission workflows
-    - Error handling
-- **Categories:** `job_listing`, `job_status`, `job_submission`, `error_handling`
-- **Difficulties:** `easy`, `medium`, etc.
+**Evaluation Coverage:**
+- **30+ Test Cases** covering 7 categories
+- **15 MCP Tools** comprehensively tested
+- **Complex Scenarios** including multi-tool interactions
+- **Error Handling** and edge cases
+- **Agent Integration** testing
+
+**Test Categories:**
+1. Basic Job Management
+2. Advanced Job Information
+3. Cluster and Pool Information
+4. Resource Monitoring
+5. Reporting and Analytics
+6. Complex Queries
+7. Error Handling
 
 ---
 
@@ -177,11 +228,9 @@ make clean          # Remove build/test artifacts
 
 ## ⚙️ Environment Variables
 
-- `GOOGLE_API_KEY` (required): API key for Gemini model.
-- `MCP_SERVER_HOST` (optional): Host for MCP server (default: localhost).
-- `MCP_SERVER_PORT` (optional): Port for MCP server (default: 8001).
+- `GOOGLE_API_KEY` (required): API key for Gemini model
 
-Create a `.env` file in the project root with at least:
+Create a `.env` file in the project root:
 ```
 GOOGLE_API_KEY=your_gemini_api_key_here
 ```
@@ -196,7 +245,8 @@ GOOGLE_API_KEY=your_gemini_api_key_here
     - `deprecated==1.2.13`
     - `htcondor==24.9.2`
 - **Development:** (see `requirements-dev.txt`)
-    - `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-mock`, `black`, `flake8`, `mypy`, `pre-commit`
+    - `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-mock`
+    - `black`, `flake8`, `mypy`, `pre-commit`
 
 ---
 
@@ -205,14 +255,13 @@ GOOGLE_API_KEY=your_gemini_api_key_here
 ### Common Issues
 
 - **`No module named 'htcondor'`**:
-    - Make sure you are running on a system with HTCondor and the Python bindings installed.
-    - If running on a facility login node, these are usually pre-installed.
-- **Session state not persisting**:
-    - Session state is currently in-memory only and resets when the server restarts.
-    - For persistent state, consider implementing database or file-based storage.
+    - Ensure HTCondor Python bindings are installed
+    - On ATLAS Facility, these are usually pre-installed
+- **Agent not responding**:
+    - Verify `GOOGLE_API_KEY` is set correctly
+    - Check agent logs for connection issues
 - **Python version issues on ATLAS**:
-    - The default Python on ATLAS is too old for `mcp` or `google-adk`.
-    - Install Python 3.10+ locally via Miniconda:
+    - Install Python 3.10+ via Miniconda:
 
 ```bash
 cd ~
@@ -231,9 +280,23 @@ pip install -r requirements.txt
 
 ## 📚 Documentation & References
 
-- **Prompt & Principles:** See `local_mcp/prompt.py` for agent instructions and example interactions.
-- **Evaluation Framework:** See `evaluation/evaluation.py` for scenario structure and CLI options.
-- **Server Tools:** See `local_mcp/server.py` for tool implementations and status code mapping.
+- **Agent Configuration:** See `local_mcp/agent.py` for agent setup
+- **MCP Server Tools:** See `local_mcp/server.py` for all 15 tool implementations
+- **Agent Prompt:** See `local_mcp/prompt.py` for comprehensive instructions
+- **Evaluation Framework:** See `evaluation/README.md` for detailed evaluation documentation
+- **Test Suite:** See `tests/test_htcondor_mcp_comprehensive.py` for comprehensive testing
+
+---
+
+## 🎯 Key Features
+
+- **15 Advanced MCP Tools** for comprehensive HTCondor management
+- **Intelligent Agent** with context-aware responses
+- **Robust Testing** with 50+ test cases and ADK evaluation framework
+- **Advanced Monitoring** including resource usage, system load, and analytics
+- **Flexible Reporting** with time-based analysis and data export
+- **Production Ready** with error handling and logging
+- **ADK Compatible** for integration with official evaluation frameworks
 
 ---
 
