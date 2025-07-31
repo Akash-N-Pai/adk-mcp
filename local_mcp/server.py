@@ -442,6 +442,126 @@ def end_session(session_id: str, tool_context=None) -> dict:
         log_tool_call(session_id, user_id, "end_session", {"session_id": session_id}, result)
         return result
 
+def get_session_history(session_id: str, tool_context=None) -> dict:
+    """Get conversation history for a specific session."""
+    _, user_id = get_session_context(tool_context)
+    
+    try:
+        if not session_manager.validate_session(session_id):
+            result = {
+                "success": False,
+                "message": "Invalid or expired session"
+            }
+            log_tool_call(session_id, user_id, "get_session_history", {"session_id": session_id}, result)
+            return result
+        
+        # Get conversation history from database
+        history = session_manager.get_conversation_history(session_id)
+        
+        # Parse and format the history
+        formatted_history = []
+        for entry in history:
+            try:
+                # Parse the tool call data
+                tool_data = eval(entry['content']) if isinstance(entry['content'], str) else entry['content']
+                
+                formatted_entry = {
+                    "timestamp": entry['timestamp'],
+                    "tool_name": tool_data.get('tool_name', 'Unknown'),
+                    "arguments": tool_data.get('arguments', {}),
+                    "result_summary": str(tool_data.get('result', {}))[:200] + "..." if len(str(tool_data.get('result', {}))) > 200 else str(tool_data.get('result', {}))
+                }
+                formatted_history.append(formatted_entry)
+            except Exception as e:
+                # Skip malformed entries
+                continue
+        
+        result = {
+            "success": True,
+            "session_id": session_id,
+            "total_entries": len(formatted_history),
+            "conversation_history": formatted_history,
+            "session_info": session_manager.get_session_context(session_id)
+        }
+        
+        log_tool_call(session_id, user_id, "get_session_history", {"session_id": session_id}, result)
+        return result
+        
+    except Exception as e:
+        result = {
+            "success": False,
+            "message": f"Failed to get session history: {str(e)}"
+        }
+        log_tool_call(session_id, user_id, "get_session_history", {"session_id": session_id}, result)
+        return result
+
+def get_session_summary(session_id: str, tool_context=None) -> dict:
+    """Get a summary of what was done in a session."""
+    _, user_id = get_session_context(tool_context)
+    
+    try:
+        if not session_manager.validate_session(session_id):
+            result = {
+                "success": False,
+                "message": "Invalid or expired session"
+            }
+            log_tool_call(session_id, user_id, "get_session_summary", {"session_id": session_id}, result)
+            return result
+        
+        # Get conversation history
+        history = session_manager.get_conversation_history(session_id)
+        
+        # Analyze the history
+        tool_counts = {}
+        job_references = set()
+        last_activity = None
+        
+        for entry in history:
+            try:
+                tool_data = eval(entry['content']) if isinstance(entry['content'], str) else entry['content']
+                tool_name = tool_data.get('tool_name', 'Unknown')
+                
+                # Count tool usage
+                tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+                
+                # Extract job references
+                args = tool_data.get('arguments', {})
+                if 'cluster_id' in args:
+                    job_references.add(args['cluster_id'])
+                
+                # Track last activity
+                if not last_activity or entry['timestamp'] > last_activity:
+                    last_activity = entry['timestamp']
+                    
+            except Exception:
+                continue
+        
+        # Create summary
+        summary = {
+            "session_id": session_id,
+            "total_interactions": len(history),
+            "tools_used": tool_counts,
+            "jobs_referenced": list(job_references),
+            "last_activity": last_activity,
+            "session_info": session_manager.get_session_context(session_id)
+        }
+        
+        result = {
+            "success": True,
+            "summary": summary
+        }
+        
+        log_tool_call(session_id, user_id, "get_session_summary", {"session_id": session_id}, result)
+        return result
+        
+    except Exception as e:
+        result = {
+            "success": False,
+            "message": f"Failed to get session summary: {str(e)}"
+        }
+        log_tool_call(session_id, user_id, "get_session_summary", {"session_id": session_id}, result)
+        return result
+
 
 # ===== CLUSTER AND POOL INFORMATION =====
 
@@ -1160,6 +1280,10 @@ ADK_AF_TOOLS = {
     
     # Advanced Job Information
     "get_job_history": FunctionTool(func=get_job_history),
+    
+    # Session Management
+    "get_session_history": FunctionTool(func=get_session_history),
+    "get_session_summary": FunctionTool(func=get_session_summary),
     
     # Reporting and Analytics
     "generate_job_report": FunctionTool(func=generate_job_report),
