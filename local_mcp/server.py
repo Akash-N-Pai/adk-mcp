@@ -86,7 +86,7 @@ def get_all_user_sessions_summary(user_id=None):
                 SELECT s.session_id, s.created_at, s.last_activity, COUNT(c.conversation_id) as conversation_count
                 FROM sessions s 
                 LEFT JOIN conversations c ON s.session_id = c.session_id 
-                WHERE s.user_id = ? 
+                WHERE s.user_id = ? AND s.is_active = TRUE
                 GROUP BY s.session_id 
                 ORDER BY s.last_activity DESC
             """, (user_id,))
@@ -490,6 +490,37 @@ def create_session(user_id: str, metadata: Optional[dict] = None, tool_context=N
             "message": f"Failed to create session: {str(e)}"
         }
         log_tool_call(session_id, user_id, "create_session", {"user_id": user_id, "metadata": metadata}, result)
+        return result
+
+def start_fresh_session(user_id: Optional[str] = None, metadata: Optional[dict] = None, tool_context=None) -> dict:
+    """Start a completely fresh session, ignoring any existing sessions."""
+    if user_id is None:
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
+    
+    # Get combined session context manager
+    scm = get_session_context_manager()
+    
+    try:
+        session_id = scm.create_session(user_id, metadata or {})
+        result = {
+            "success": True,
+            "session_id": session_id,
+            "user_id": user_id,
+            "message": f"Fresh session created successfully for user {user_id}",
+            "note": "This is a new session, not continuing any previous session"
+        }
+        
+        log_tool_call(session_id, user_id, "start_fresh_session", {"user_id": user_id, "metadata": metadata}, result)
+        return result
+    except Exception as e:
+        result = {
+            "success": False,
+            "message": f"Failed to create fresh session: {str(e)}"
+        }
+        log_tool_call(None, user_id, "start_fresh_session", {"user_id": user_id, "metadata": metadata}, result)
         return result
 
 def get_session_info(session_id: str, tool_context=None) -> dict:
@@ -1877,6 +1908,7 @@ ADK_AF_TOOLS = {
     # Session Management
     "list_user_sessions": FunctionTool(func=list_user_sessions),
     "continue_last_session": FunctionTool(func=continue_last_session),
+    "start_fresh_session": FunctionTool(func=start_fresh_session),
     "get_session_history": FunctionTool(func=get_session_history),
     "get_session_summary": FunctionTool(func=get_session_summary),
     "get_user_conversation_memory": FunctionTool(func=get_user_conversation_memory),
