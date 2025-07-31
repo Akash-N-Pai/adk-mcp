@@ -45,6 +45,18 @@ def get_session_context(tool_context=None):
         return tool_context.get('session_id'), tool_context.get('user_id')
     return None, None
 
+def ensure_session_exists(tool_context=None):
+    """Ensure a session exists, create one if it doesn't."""
+    session_id, user_id = get_session_context(tool_context)
+    
+    if session_id is None:
+        # Create a new session automatically
+        user_id = "anonymous"  # Default user ID
+        session_id = session_manager.create_session(user_id, {})
+        logging.info(f"Auto-created session {session_id} for user {user_id}")
+    
+    return session_id, user_id
+
 def log_tool_call(session_id, user_id, tool_name, arguments, result):
     """Log tool call to conversation history."""
     logging.info(f"log_tool_call: session_id={session_id}, user_id={user_id}, tool_name={tool_name}")
@@ -63,7 +75,7 @@ def log_tool_call(session_id, user_id, tool_name, arguments, result):
         logging.warning(f"No valid session_id for tool call: {tool_name}")
 
 def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: int = 10, tool_context=None) -> dict:
-    session_id, user_id = get_session_context(tool_context)
+    session_id, user_id = ensure_session_exists(tool_context)
     
     # Use user preferences for default limit if available
     if session_id and session_manager.validate_session(session_id):
@@ -135,7 +147,7 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: 
 
 
 def get_job_status(cluster_id: int, tool_context=None) -> dict:
-    session_id, user_id = get_session_context(tool_context)
+    session_id, user_id = ensure_session_exists(tool_context)
     
     try:
         schedd = htcondor.Schedd()
@@ -253,7 +265,7 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
 
 
 def submit_job(submit_description: dict, tool_context=None) -> dict:
-    session_id, user_id = get_session_context(tool_context)
+    session_id, user_id = ensure_session_exists(tool_context)
     
     schedd = htcondor.Schedd()
     submit = htcondor.Submit(submit_description)
@@ -269,7 +281,7 @@ def submit_job(submit_description: dict, tool_context=None) -> dict:
 
 def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict:
     """Get job execution history including state changes and events."""
-    session_id, user_id = get_session_context(tool_context)
+    session_id, user_id = ensure_session_exists(tool_context)
     
     try:
         schedd = htcondor.Schedd()
@@ -355,22 +367,31 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
 
 def create_session(user_id: str, metadata: Optional[dict] = None, tool_context=None) -> dict:
     """Create a new session for a user."""
+    session_id, _ = get_session_context(tool_context)  # We don't need user_id here since we're creating a session
+    
     try:
         session_id = session_manager.create_session(user_id, metadata)
-        return {
+        result = {
             "success": True,
             "session_id": session_id,
             "user_id": user_id,
             "message": f"Session created successfully for user {user_id}"
         }
+        
+        log_tool_call(session_id, user_id, "create_session", {"user_id": user_id, "metadata": metadata}, result)
+        return result
     except Exception as e:
-        return {
+        result = {
             "success": False,
             "message": f"Failed to create session: {str(e)}"
         }
+        log_tool_call(session_id, user_id, "create_session", {"user_id": user_id, "metadata": metadata}, result)
+        return result
 
 def get_session_info(session_id: str, tool_context=None) -> dict:
     """Get information about a session."""
+    _, user_id = get_session_context(tool_context)  # We don't need session_id here since it's a parameter
+    
     try:
         if not session_manager.validate_session(session_id):
             return {
@@ -379,35 +400,47 @@ def get_session_info(session_id: str, tool_context=None) -> dict:
             }
         
         context = session_manager.get_session_context(session_id)
-        return {
+        result = {
             "success": True,
             "session_info": context
         }
+        
+        log_tool_call(session_id, user_id, "get_session_info", {"session_id": session_id}, result)
+        return result
     except Exception as e:
-        return {
+        result = {
             "success": False,
             "message": f"Failed to get session info: {str(e)}"
         }
+        log_tool_call(session_id, user_id, "get_session_info", {"session_id": session_id}, result)
+        return result
 
 def end_session(session_id: str, tool_context=None) -> dict:
     """End a session."""
+    _, user_id = get_session_context(tool_context)  # We don't need session_id here since it's a parameter
+    
     try:
         if session_manager.validate_session(session_id):
             session_manager.deactivate_session(session_id)
-            return {
+            result = {
                 "success": True,
                 "message": "Session ended successfully"
             }
         else:
-            return {
+            result = {
                 "success": False,
                 "message": "Session not found or already inactive"
             }
+        
+        log_tool_call(session_id, user_id, "end_session", {"session_id": session_id}, result)
+        return result
     except Exception as e:
-        return {
+        result = {
             "success": False,
             "message": f"Failed to end session: {str(e)}"
         }
+        log_tool_call(session_id, user_id, "end_session", {"session_id": session_id}, result)
+        return result
 
 
 # ===== CLUSTER AND POOL INFORMATION =====
@@ -792,6 +825,8 @@ def get_system_load(tool_context=None) -> dict:
 
 def generate_job_report(owner: Optional[str] = None, time_range: Optional[str] = None, tool_context=None) -> dict:
     """Generate comprehensive job report."""
+    session_id, user_id = ensure_session_exists(tool_context)
+    
     try:
         schedd = htcondor.Schedd()
         
@@ -867,16 +902,23 @@ def generate_job_report(owner: Optional[str] = None, time_range: Optional[str] =
             "job_details": job_data[:100]  # Limit to first 100 jobs to prevent large responses
         }
         
-        return {
+        result = {
             "success": True,
             "report": report
         }
+        
+        log_tool_call(session_id, user_id, "generate_job_report", {"owner": owner, "time_range": time_range}, result)
+        return result
     except Exception as e:
-        return {"success": False, "message": f"Error generating job report: {str(e)}"}
+        result = {"success": False, "message": f"Error generating job report: {str(e)}"}
+        log_tool_call(session_id, user_id, "generate_job_report", {"owner": owner, "time_range": time_range}, result)
+        return result
 
 
 def get_utilization_stats(time_range: Optional[str] = "24h", tool_context=None) -> dict:
     """Get resource utilization statistics over time."""
+    session_id, user_id = ensure_session_exists(tool_context)
+    
     try:
         schedd = htcondor.Schedd()
         
@@ -983,7 +1025,7 @@ def get_utilization_stats(time_range: Optional[str] = "24h", tool_context=None) 
         cpu_utilization = (total_cpu_time / (total_cpus * int(time_range[:-1]) * 3600)) * 100 if total_cpus > 0 else 0
         memory_utilization = (total_memory_usage / total_memory) * 100 if total_memory > 0 else 0
         
-        return {
+        result = {
             "success": True,
             "utilization_stats": {
                 "time_range": time_range,
@@ -1002,12 +1044,19 @@ def get_utilization_stats(time_range: Optional[str] = "24h", tool_context=None) 
             },
             "timestamp": datetime.datetime.now().isoformat()
         }
+        
+        log_tool_call(session_id, user_id, "get_utilization_stats", {"time_range": time_range}, result)
+        return result
     except Exception as e:
-        return {"success": False, "message": f"Error getting utilization stats: {str(e)}"}
+        result = {"success": False, "message": f"Error getting utilization stats: {str(e)}"}
+        log_tool_call(session_id, user_id, "get_utilization_stats", {"time_range": time_range}, result)
+        return result
 
 
 def export_job_data(format: str = "json", filters: Optional[dict] = None, tool_context=None) -> dict:
     """Export job data in various formats."""
+    session_id, user_id = ensure_session_exists(tool_context)
+    
     try:
         schedd = htcondor.Schedd()
         
@@ -1088,15 +1137,20 @@ def export_job_data(format: str = "json", filters: Optional[dict] = None, tool_c
         else:
             return {"success": False, "message": f"Unsupported format: {format}"}
         
-        return {
+        result = {
             "success": True,
             "format": format,
             "filters": filters or {},
             "total_jobs": len(job_data),
             "data": formatted_data
         }
+        
+        log_tool_call(session_id, user_id, "export_job_data", {"format": format, "filters": filters}, result)
+        return result
     except Exception as e:
-        return {"success": False, "message": f"Error exporting job data: {str(e)}"}
+        result = {"success": False, "message": f"Error exporting job data: {str(e)}"}
+        log_tool_call(session_id, user_id, "export_job_data", {"format": format, "filters": filters}, result)
+        return result
 
 
 ADK_AF_TOOLS = {
@@ -1106,22 +1160,6 @@ ADK_AF_TOOLS = {
     
     # Advanced Job Information
     "get_job_history": FunctionTool(func=get_job_history),
-    
-    # Simple Session Management Tools
-    "create_session": FunctionTool(func=create_session),
-    "get_session_info": FunctionTool(func=get_session_info),
-    "end_session": FunctionTool(func=end_session),
-    
-    # Cluster and Pool Information - temporarily disabled for debugging
-    # "list_pools": FunctionTool(func=list_pools),
-    # "get_pool_status": FunctionTool(func=get_pool_status),
-    # "list_machines": FunctionTool(func=list_machines),
-    # "get_machine_status": FunctionTool(func=get_machine_status),
-    
-    # Resource Monitoring - temporarily disabled for debugging
-    # "get_resource_usage": FunctionTool(func=get_resource_usage),
-    # "get_queue_stats": FunctionTool(func=get_queue_stats),
-    # "get_system_load": FunctionTool(func=get_system_load),
     
     # Reporting and Analytics
     "generate_job_report": FunctionTool(func=generate_job_report),
@@ -1157,6 +1195,7 @@ async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextConten
     tool_args = arguments.copy()
     
     # Extract session context from arguments if present (but don't remove required parameters)
+    # Note: If no session_id is provided, the tool functions will automatically create one
     session_id = tool_args.pop('session_id', None)
     tool_context = {'session_id': session_id} if session_id else None
     
