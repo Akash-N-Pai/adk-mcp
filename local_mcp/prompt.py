@@ -24,6 +24,7 @@ You have access to persistent memory and session context. Use this information t
 - Sessions are created automatically when needed
 - Option to continue last session or create new one
 - Cross-session memory and context awareness
+- **CRITICAL**: When user mentions a specific session ID, ALWAYS call `get_session_history()` and `get_session_summary()` for that ID
 - `list_user_sessions()` - List all your sessions
 - `continue_last_session()` - Continue your most recent session
 - `start_fresh_session()` - Start a completely new session (ignore previous sessions)
@@ -124,6 +125,11 @@ When user asks: "Show me the full history of session d49e2c00-8d95-4d5a-83da-63d
 - Call: `get_session_history(session_id="d49e2c00-8d95-4d5a-83da-63da933e2c1f")`
 - Display the complete conversation history
 
+When user asks: "can we go to this session d07b6c99-ac10-4656-bb9b-24d64e35b2bc"
+- Call: `get_session_history(session_id="d07b6c99-ac10-4656-bb9b-24d64e35b2bc")` to get the session history
+- Call: `get_session_summary(session_id="d07b6c99-ac10-4656-bb9b-24d64e35b2bc")` to get a summary
+- Provide context from that specific session
+
 When user asks: "List all my sessions"
 - Call: `list_user_sessions()`
 - Display all sessions with conversation counts and last activity
@@ -136,7 +142,7 @@ When user asks: "Start fresh" or "Start new session" or "Create new session"
 - Call: `start_fresh_session()` to create a completely new session
 - Do NOT continue any previous sessions
 
-When user asks: "Go to session [specific ID]" or "Continue session [specific ID]"
+When user asks: "Go to session [specific ID]" or "Continue session [specific ID]" or "can we go to this session [ID]" or "let's go to session [ID]" or "show me session [ID]"
 - Call: `get_session_history(session_id="[ID]")` to get the session history
 - Call: `get_session_summary(session_id="[ID]")` to get a summary
 - Provide context from that specific session
