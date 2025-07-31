@@ -587,8 +587,18 @@ def get_session_history(session_id: str, tool_context=None) -> dict:
         formatted_history = []
         for entry in history:
             try:
-                # Parse the tool call data
-                tool_data = eval(entry['content']) if isinstance(entry['content'], str) else entry['content']
+                # Parse the tool call data - use ast.literal_eval for safer parsing
+                import ast
+                content_str = entry['content']
+                if isinstance(content_str, str):
+                    # Try to parse as literal eval first (safer)
+                    try:
+                        tool_data = ast.literal_eval(content_str)
+                    except (ValueError, SyntaxError):
+                        # Fallback to eval if literal_eval fails
+                        tool_data = eval(content_str)
+                else:
+                    tool_data = content_str
                 
                 formatted_entry = {
                     "timestamp": entry['timestamp'],
@@ -598,7 +608,8 @@ def get_session_history(session_id: str, tool_context=None) -> dict:
                 }
                 formatted_history.append(formatted_entry)
             except Exception as e:
-                # Skip malformed entries
+                # Skip malformed entries but log the error
+                logging.warning(f"Failed to parse conversation entry: {e}")
                 continue
         
         result = {
@@ -719,7 +730,18 @@ def get_user_conversation_memory(user_id: Optional[str] = None, limit: int = 50,
             
             for entry in history:
                 try:
-                    tool_data = eval(entry['content']) if isinstance(entry['content'], str) else entry['content']
+                    # Parse the tool call data - use ast.literal_eval for safer parsing
+                    import ast
+                    content_str = entry['content']
+                    if isinstance(content_str, str):
+                        # Try to parse as literal eval first (safer)
+                        try:
+                            tool_data = ast.literal_eval(content_str)
+                        except (ValueError, SyntaxError):
+                            # Fallback to eval if literal_eval fails
+                            tool_data = eval(content_str)
+                    else:
+                        tool_data = content_str
                     
                     conversation_entry = {
                         "session_id": session_id,
@@ -729,7 +751,9 @@ def get_user_conversation_memory(user_id: Optional[str] = None, limit: int = 50,
                         "result_summary": str(tool_data.get('result', {}))[:200] + "..." if len(str(tool_data.get('result', {}))) > 200 else str(tool_data.get('result', {}))
                     }
                     all_conversations.append(conversation_entry)
-                except Exception:
+                except Exception as e:
+                    # Skip malformed entries but log the error
+                    logging.warning(f"Failed to parse conversation entry in memory: {e}")
                     continue
         
         # Sort by timestamp
@@ -809,7 +833,19 @@ def get_session_summary(session_id: str, tool_context=None) -> dict:
         
         for entry in history:
             try:
-                tool_data = eval(entry['content']) if isinstance(entry['content'], str) else entry['content']
+                # Parse the tool call data - use ast.literal_eval for safer parsing
+                import ast
+                content_str = entry['content']
+                if isinstance(content_str, str):
+                    # Try to parse as literal eval first (safer)
+                    try:
+                        tool_data = ast.literal_eval(content_str)
+                    except (ValueError, SyntaxError):
+                        # Fallback to eval if literal_eval fails
+                        tool_data = eval(content_str)
+                else:
+                    tool_data = content_str
+                
                 tool_name = tool_data.get('tool_name', 'Unknown')
                 
                 # Count tool usage
@@ -824,7 +860,9 @@ def get_session_summary(session_id: str, tool_context=None) -> dict:
                 if not last_activity or entry['timestamp'] > last_activity:
                     last_activity = entry['timestamp']
                     
-            except Exception:
+            except Exception as e:
+                # Skip malformed entries but log the error
+                logging.warning(f"Failed to parse conversation entry in summary: {e}")
                 continue
         
         # Create summary
