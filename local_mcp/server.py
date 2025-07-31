@@ -77,6 +77,8 @@ def get_all_user_sessions_summary(user_id=None):
         except Exception:
             user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
     
+    logging.info(f"Getting sessions for user: {user_id}")
+    
     try:
         with sqlite3.connect(session_manager.db_path) as conn:
             cursor = conn.execute("""
@@ -87,7 +89,11 @@ def get_all_user_sessions_summary(user_id=None):
                 GROUP BY s.session_id 
                 ORDER BY s.last_activity DESC
             """, (user_id,))
-            return [dict(zip(['session_id', 'created_at', 'last_activity', 'conversation_count'], row)) for row in cursor.fetchall()]
+            rows = cursor.fetchall()
+            logging.info(f"Found {len(rows)} sessions for user {user_id}")
+            result = [dict(zip(['session_id', 'created_at', 'last_activity', 'conversation_count'], row)) for row in rows]
+            logging.info(f"Returning sessions: {result}")
+            return result
     except Exception as e:
         logging.error(f"Error getting user sessions summary: {e}")
         return []
