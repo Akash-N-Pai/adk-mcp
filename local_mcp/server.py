@@ -1149,8 +1149,11 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
 async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextContent]:
     logging.info(f"call_tool for '{name}' args: {arguments}")
     
-    # Extract session context from arguments if present (but don't remove user_id for create_session)
-    session_id = arguments.pop('session_id', None)
+    # Create a copy of arguments to avoid modifying the original
+    tool_args = arguments.copy()
+    
+    # Extract session context from arguments if present (but don't remove required parameters)
+    session_id = tool_args.pop('session_id', None)
     tool_context = {'session_id': session_id} if session_id else None
     
     if name in ADK_AF_TOOLS:
@@ -1158,9 +1161,9 @@ async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextConten
         try:
             # Add tool_context to arguments
             if tool_context:
-                arguments['tool_context'] = tool_context
+                tool_args['tool_context'] = tool_context
             
-            resp = await inst.run_async(args=arguments, tool_context=tool_context)
+            resp = await inst.run_async(args=tool_args, tool_context=tool_context)
             logging.info(f"Tool '{name}' success.")
             return [mcp_types.TextContent(type="text", text=json.dumps(resp, indent=2))]
         except Exception as e:
