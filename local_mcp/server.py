@@ -444,7 +444,12 @@ def end_session(session_id: str, tool_context=None) -> dict:
 
 def get_session_history(session_id: str, tool_context=None) -> dict:
     """Get conversation history for a specific session."""
+    # Get user_id from session context, but use the provided session_id
     _, user_id = get_session_context(tool_context)
+    if user_id is None:
+        # Try to get user_id from the session itself
+        session_info = session_manager.get_session_context(session_id)
+        user_id = session_info.get('user_id', 'unknown') if isinstance(session_info, dict) else 'unknown'
     
     try:
         if not session_manager.validate_session(session_id):
@@ -497,7 +502,12 @@ def get_session_history(session_id: str, tool_context=None) -> dict:
 
 def get_session_summary(session_id: str, tool_context=None) -> dict:
     """Get a summary of what was done in a session."""
+    # Get user_id from session context, but use the provided session_id
     _, user_id = get_session_context(tool_context)
+    if user_id is None:
+        # Try to get user_id from the session itself
+        session_info = session_manager.get_session_context(session_id)
+        user_id = session_info.get('user_id', 'unknown') if isinstance(session_info, dict) else 'unknown'
     
     try:
         if not session_manager.validate_session(session_id):
