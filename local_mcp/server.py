@@ -567,7 +567,7 @@ def get_session_history(session_id: str, tool_context=None) -> dict:
         log_tool_call(session_id, user_id, "get_session_history", {"session_id": session_id}, result)
         return result
 
-def list_user_sessions(user_id: str = None, tool_context=None) -> dict:
+def list_user_sessions(user_id: Optional[str] = None, tool_context=None) -> dict:
     """List all sessions for the current user."""
     if user_id is None:
         try:
@@ -596,7 +596,7 @@ def list_user_sessions(user_id: str = None, tool_context=None) -> dict:
         log_tool_call(None, user_id, "list_user_sessions", {"user_id": user_id}, result)
         return result
 
-def continue_last_session(user_id: str = None, tool_context=None) -> dict:
+def continue_last_session(user_id: Optional[str] = None, tool_context=None) -> dict:
     """Continue the last active session for the user."""
     if user_id is None:
         try:
@@ -634,7 +634,7 @@ def continue_last_session(user_id: str = None, tool_context=None) -> dict:
         log_tool_call(None, user_id, "continue_last_session", {"user_id": user_id}, result)
         return result
 
-def get_user_conversation_memory(user_id: str = None, limit: int = 50, tool_context=None) -> dict:
+def get_user_conversation_memory(user_id: Optional[str] = None, limit: int = 50, tool_context=None) -> dict:
     """Get conversation memory across all sessions for a user."""
     if user_id is None:
         try:
