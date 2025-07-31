@@ -1149,10 +1149,9 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
 async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextContent]:
     logging.info(f"call_tool for '{name}' args: {arguments}")
     
-    # Extract session context from arguments if present
+    # Extract session context from arguments if present (but don't remove user_id for create_session)
     session_id = arguments.pop('session_id', None)
-    user_id = arguments.pop('user_id', None)
-    tool_context = {'session_id': session_id, 'user_id': user_id} if session_id else None
+    tool_context = {'session_id': session_id} if session_id else None
     
     if name in ADK_AF_TOOLS:
         inst = ADK_AF_TOOLS[name]
