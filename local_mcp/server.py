@@ -17,14 +17,14 @@ from mcp.server.models import InitializationOptions
 import htcondor
 from typing import Optional
 
-# Import combined session context management - handle both relative and absolute imports
+# Import simplified session context management - handle both relative and absolute imports
 try:
-    from .session_context import get_session_context_manager
+    from .session_context_simple import get_simplified_session_context_manager
 except ImportError:
     # When running server.py directly, use absolute import
     import sys
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-    from local_mcp.session_context import get_session_context_manager
+    from local_mcp.session_context_simple import get_simplified_session_context_manager
 
 load_dotenv()
 
@@ -38,8 +38,8 @@ logging.basicConfig(
 logging.info("Creating MCP Server instance for HTCondor...")
 app = Server("htcondor-mcp-server")
 
-# Initialize combined session context management
-session_context_manager = get_session_context_manager()
+# Initialize simplified session context management
+session_context_manager = get_simplified_session_context_manager()
 
 def get_session_context(tool_context=None):
     """Extract session context from tool context."""
@@ -142,8 +142,8 @@ def log_tool_call(session_id, user_id, tool_name, arguments, result):
         logging.warning(f"No valid session_id for tool call: {tool_name}")
 
 def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: int = 10, tool_context=None) -> dict:
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     # Extract session info from tool_context if available
     session_id = None
@@ -231,8 +231,8 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: 
 
 
 def get_job_status(cluster_id: int, tool_context=None) -> dict:
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     # Extract session info from tool_context if available
     session_id = None
@@ -468,8 +468,8 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
 
 def create_session(user_id: str, metadata: Optional[dict] = None, tool_context=None) -> dict:
     """Create a new session for a user."""
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     session_id, _ = get_session_context(tool_context)  # We don't need user_id here since we're creating a session
     
@@ -500,8 +500,8 @@ def start_fresh_session(user_id: Optional[str] = None, metadata: Optional[dict] 
         except Exception:
             user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
     
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     try:
         session_id = scm.create_session(user_id, metadata or {})
@@ -525,8 +525,8 @@ def start_fresh_session(user_id: Optional[str] = None, metadata: Optional[dict] 
 
 def get_session_info(session_id: str, tool_context=None) -> dict:
     """Get information about a session."""
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     _, user_id = get_session_context(tool_context)  # We don't need session_id here since it's a parameter
     
@@ -555,8 +555,8 @@ def get_session_info(session_id: str, tool_context=None) -> dict:
 
 def end_session(session_id: str, tool_context=None) -> dict:
     """End a session."""
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     _, user_id = get_session_context(tool_context)  # We don't need session_id here since it's a parameter
     
@@ -585,8 +585,8 @@ def end_session(session_id: str, tool_context=None) -> dict:
 
 def get_session_history(session_id: str, tool_context=None) -> dict:
     """Get conversation history for a specific session."""
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     # Get user_id from session context, but use the provided session_id
     _, user_id = get_session_context(tool_context)
@@ -699,8 +699,8 @@ def list_user_sessions(user_id: Optional[str] = None, tool_context=None) -> dict
 
 def continue_last_session(user_id: Optional[str] = None, tool_context=None) -> dict:
     """Continue the last active session for the user."""
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     if user_id is None:
         try:
@@ -750,8 +750,8 @@ def get_user_conversation_memory(user_id: Optional[str] = None, limit: int = 50,
         # Get all sessions for the user
         sessions = get_all_user_sessions_summary(user_id)
         
-        # Get combined session context manager
-        scm = get_session_context_manager()
+        # Get simplified session context manager
+        scm = get_simplified_session_context_manager()
         
         # Get conversation history from all sessions
         all_conversations = []
@@ -828,8 +828,8 @@ def get_user_conversation_memory(user_id: Optional[str] = None, limit: int = 50,
 
 def get_session_summary(session_id: str, tool_context=None) -> dict:
     """Get a summary of what was done in a session."""
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     # Get user_id from session context, but use the provided session_id
     _, user_id = get_session_context(tool_context)
@@ -1804,8 +1804,8 @@ def search_job_memory(query: str, tool_context=None) -> dict:
 
 def get_user_context_summary(tool_context=None) -> dict:
     """Get a comprehensive summary of the user's context and history."""
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     # Extract session info from tool_context if available
     session_id = None
@@ -1861,8 +1861,8 @@ def get_user_context_summary(tool_context=None) -> dict:
 
 def add_to_memory(key: str, value: str, global_memory: bool = False, tool_context=None) -> dict:
     """Add information to memory using ADK Context."""
-    # Get combined session context manager
-    scm = get_session_context_manager()
+    # Get simplified session context manager
+    scm = get_simplified_session_context_manager()
     
     # Extract session info from tool_context if available
     session_id = None

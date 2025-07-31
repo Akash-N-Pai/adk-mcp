@@ -10,14 +10,14 @@ from google.adk.events import Event
 from typing import AsyncGenerator
 
 from .prompt import DB_MCP_PROMPT
-from .session_context import get_session_context_manager
+from .session_context_simple import get_simplified_session_context_manager
 
 # IMPORTANT: Dynamically compute the absolute path to your server.py script
 # The ADK agent for HTCondor/ATLAS Facility with session state management
 PATH_TO_YOUR_MCP_SERVER_SCRIPT = str((Path(__file__).parent / "server.py").resolve())
 
 # Initialize session context management
-session_context_manager = get_session_context_manager()
+session_context_manager = get_simplified_session_context_manager()
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class HTCondorAgent(LlmAgent):
         logger.info(f"Starting HTCondor agent run for invocation {ctx.invocation_id}")
         
         # Get session context manager
-        scm = get_session_context_manager()
+        scm = get_simplified_session_context_manager()
         
         # Extract user and session info
         user_id = self._get_user_id_from_context(ctx)
