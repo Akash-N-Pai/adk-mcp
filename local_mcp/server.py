@@ -581,8 +581,12 @@ def list_user_sessions(user_id: Optional[str] = None, tool_context=None) -> dict
         except Exception:
             user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
     
+    logging.info(f"list_user_sessions called with user_id: {user_id}")
+    
     try:
+        logging.info(f"Calling get_all_user_sessions_summary for user: {user_id}")
         sessions = get_all_user_sessions_summary(user_id)
+        logging.info(f"get_all_user_sessions_summary returned: {sessions}")
         
         result = {
             "success": True,
@@ -591,10 +595,12 @@ def list_user_sessions(user_id: Optional[str] = None, tool_context=None) -> dict
             "sessions": sessions
         }
         
+        logging.info(f"list_user_sessions result: {result}")
         log_tool_call(None, user_id, "list_user_sessions", {"user_id": user_id}, result)
         return result
         
     except Exception as e:
+        logging.error(f"Exception in list_user_sessions: {e}", exc_info=True)
         result = {
             "success": False,
             "message": f"Failed to list user sessions: {str(e)}"
