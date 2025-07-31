@@ -47,6 +47,7 @@ def get_session_context(tool_context=None):
 
 def log_tool_call(session_id, user_id, tool_name, arguments, result):
     """Log tool call to conversation history."""
+    logging.info(f"log_tool_call: session_id={session_id}, user_id={user_id}, tool_name={tool_name}")
     if session_id and session_manager.validate_session(session_id):
         try:
             tool_call_data = {
@@ -55,8 +56,11 @@ def log_tool_call(session_id, user_id, tool_name, arguments, result):
                 "result": result
             }
             session_manager.add_message(session_id, "tool_call", str(tool_call_data))
+            logging.info(f"Successfully logged tool call for session {session_id}")
         except Exception as e:
             logging.error(f"Failed to log tool call: {e}")
+    else:
+        logging.warning(f"No valid session_id for tool call: {tool_name}")
 
 def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: int = 10, tool_context=None) -> dict:
     session_id, user_id = get_session_context(tool_context)
@@ -134,14 +138,14 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
     session_id, user_id = get_session_context(tool_context)
     
     try:
-        schedd = htcondor.Schedd()
-        ads = schedd.query(f"ClusterId == {cluster_id}")
-        if not ads:
+    schedd = htcondor.Schedd()
+    ads = schedd.query(f"ClusterId == {cluster_id}")
+    if not ads:
             result = {"success": False, "message": "Job not found"}
             log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
             return result
         
-        ad = ads[0]
+    ad = ads[0]
         job_info = {}
         
         # Extract only the most useful information from the raw HTCondor output
@@ -178,11 +182,11 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
         
         for field_name, display_name in useful_fields.items():
             v = ad.get(field_name)
-            if hasattr(v, "eval"):
-                try:
-                    v = v.eval()
-                except Exception:
-                    v = None
+        if hasattr(v, "eval"):
+            try:
+                v = v.eval()
+            except Exception:
+                v = None
             if v is not None:
                 # Format special fields
                 if field_name == "JobStatus":
@@ -1132,11 +1136,11 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
     schemas = []
     for name, inst in ADK_AF_TOOLS.items():
         try:
-            if not inst.name:
-                inst.name = name
+        if not inst.name:
+            inst.name = name
             logging.info(f"Converting tool schema for: {name}")
-            schema = adk_to_mcp_tool_type(inst)
-            schemas.append(schema)
+        schema = adk_to_mcp_tool_type(inst)
+        schemas.append(schema)
             logging.info(f"Successfully converted tool schema for: {name}")
         except Exception as e:
             logging.error(f"Error converting tool schema for '{name}': {e}", exc_info=True)
@@ -1155,6 +1159,8 @@ async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextConten
     # Extract session context from arguments if present (but don't remove required parameters)
     session_id = tool_args.pop('session_id', None)
     tool_context = {'session_id': session_id} if session_id else None
+    
+    logging.info(f"Extracted session_id: {session_id}, tool_context: {tool_context}")
     
     if name in ADK_AF_TOOLS:
         inst = ADK_AF_TOOLS[name]
