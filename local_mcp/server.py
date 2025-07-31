@@ -133,26 +133,119 @@ def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: 
 def get_job_status(cluster_id: int, tool_context=None) -> dict:
     session_id, user_id = get_session_context(tool_context)
     
-    schedd = htcondor.Schedd()
-    ads = schedd.query(f"ClusterId == {cluster_id}")
-    if not ads:
-        result = {"success": False, "message": "Job not found"}
+    try:
+        schedd = htcondor.Schedd()
+        ads = schedd.query(f"ClusterId == {cluster_id}")
+        if not ads:
+            result = {"success": False, "message": "Job not found"}
+            log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
+            return result
+        
+        ad = ads[0]
+        job_info = {}
+        
+        # Extract only the most useful information from the raw HTCondor output
+        useful_fields = {
+            "ClusterId": "Cluster ID",
+            "ProcId": "Process ID",
+            "JobStatus": "Job Status",
+            "Owner": "Owner",
+            "Cmd": "Command",
+            "Arguments": "Arguments",
+            "Iwd": "Working Directory",
+            "JobUniverse": "Job Universe",
+            "QDate": "Queue Date",
+            "JobStartDate": "Job Start Date",
+            "JobCurrentStartDate": "Current Start Date",
+            "RemoteHost": "Execution Host",
+            "RemoteUserCpu": "CPU Time Used",
+            "RemoteSysCpu": "System CPU Time",
+            "MemoryUsage": "Memory Used",
+            "DiskUsage": "Disk Used",
+            "RequestCpus": "Requested CPUs",
+            "RequestMemory": "Requested Memory",
+            "RequestDisk": "Requested Disk",
+            "JobPrio": "Job Priority",
+            "NumJobStarts": "Number of Starts",
+            "JobRunCount": "Run Count",
+            "ExitStatus": "Exit Status",
+            "WallClockCheckpoint": "Wall Clock Time",
+            "In": "Input File",
+            "Out": "Output File",
+            "Err": "Error File",
+            "UserLog": "Log File"
+        }
+        
+        for field_name, display_name in useful_fields.items():
+            v = ad.get(field_name)
+            if hasattr(v, "eval"):
+                try:
+                    v = v.eval()
+                except Exception:
+                    v = None
+            if v is not None:
+                # Format special fields
+                if field_name == "JobStatus":
+                    status_map = {
+                        1: "Idle", 2: "Running", 3: "Removed", 4: "Completed",
+                        5: "Held", 6: "Transferring Output", 7: "Suspended"
+                    }
+                    v = f"{v} ({status_map.get(v, 'Unknown')})"
+                elif field_name == "JobUniverse":
+                    universe_map = {
+                        1: "Standard", 2: "Pipes", 3: "Linda", 4: "PVM",
+                        5: "Vanilla", 6: "Scheduler", 7: "MPI", 9: "Grid",
+                        10: "Java", 11: "Parallel", 12: "Local", 13: "Docker"
+                    }
+                    v = f"{v} ({universe_map.get(v, 'Unknown')})"
+                elif field_name in ["QDate", "JobStartDate", "JobCurrentStartDate"] and v:
+                    # Convert Unix timestamp to readable format
+                    try:
+                        v = datetime.datetime.fromtimestamp(v).isoformat()
+                    except (ValueError, TypeError):
+                        pass
+                elif field_name in ["RequestMemory", "MemoryUsage"] and v:
+                    # Format memory with units
+                    if v >= 1024:
+                        v = f"{v} MB ({v//1024} GB)"
+                    else:
+                        v = f"{v} MB"
+                elif field_name in ["RequestDisk", "DiskUsage"] and v:
+                    # Format disk with units
+                    if v >= 1024:
+                        v = f"{v} MB ({v//1024} GB)"
+                    else:
+                        v = f"{v} MB"
+                elif field_name == "Arguments" and not v:
+                    v = "(none)"
+                elif field_name in ["In", "Out", "Err"] and not v:
+                    v = "(default)"
+                elif field_name == "WallClockCheckpoint" and v:
+                    # Convert seconds to hours:minutes:seconds
+                    try:
+                        hours = int(v // 3600)
+                        minutes = int((v % 3600) // 60)
+                        seconds = int(v % 60)
+                        v = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                    except (ValueError, TypeError):
+                        pass
+                
+                job_info[display_name] = v
+        
+        result = {
+            "success": True,
+            "cluster_id": cluster_id,
+            "job_status": job_info,
+            "note": "Most useful job information extracted from HTCondor"
+        }
+        
         log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
         return result
-    
-    ad = ads[0]
-    job = {}
-    for k, v in ad.items():
-        if hasattr(v, "eval"):
-            try:
-                v = v.eval()
-            except Exception:
-                v = None
-        job[k] = v
-    
-    result = {"success": True, "job": job}
-    log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
-    return result
+        
+    except Exception as e:
+        result = {"success": False, "message": f"Error retrieving job status: {str(e)}"}
+        log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
+        return result
 
 
 def submit_job(submit_description: dict, tool_context=None) -> dict:
@@ -251,209 +344,7 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
         return result
 
 
-def get_job_requirements(cluster_id: int, tool_context=None) -> dict:
-    """Get job requirements and constraints."""
-    session_id, user_id = get_session_context(tool_context)
-    
-    try:
-        schedd = htcondor.Schedd()
-        ads = schedd.query(f"ClusterId == {cluster_id}")
-        if not ads:
-            result = {"success": False, "message": "Job not found"}
-            log_tool_call(session_id, user_id, "get_job_requirements", {"cluster_id": cluster_id}, result)
-            return result
-        
-        ad = ads[0]
-        requirements = {}
-        
-        # Extract common requirement fields with better field mapping
-        req_fields = {
-            "Requirements": "Requirements",
-            "Rank": "Rank", 
-            "RequestCpus": "RequestCpus",
-            "RequestMemory": "RequestMemory",
-            "RequestDisk": "RequestDisk",
-            "JobPrio": "JobPrio",
-            "NiceUser": "NiceUser",
-            "RequestGpus": "RequestGpus",
-            "RequestMemoryMB": "RequestMemoryMB",
-            "RequestDiskMB": "RequestDiskMB"
-        }
-        
-        for display_name, field_name in req_fields.items():
-            v = ad.get(field_name)
-            if hasattr(v, "eval"):
-                try:
-                    v = v.eval()
-                except Exception:
-                    v = None
-            if v is not None:
-                requirements[display_name] = v
-        
-        # Add human-readable descriptions and remove duplicates
-        if "JobStatus" in requirements:
-            status_map = {
-                1: "Idle", 2: "Running", 3: "Removed", 4: "Completed",
-                5: "Held", 6: "Transferring Output", 7: "Suspended"
-            }
-            status_code = requirements["JobStatus"]
-            requirements["JobStatus"] = f"{status_code} ({status_map.get(status_code, 'Unknown')})"
-        
-        if "JobUniverse" in requirements:
-            universe_map = {
-                1: "Standard", 2: "Pipes", 3: "Linda", 4: "PVM",
-                5: "Vanilla", 6: "Scheduler", 7: "MPI", 9: "Grid",
-                10: "Java", 11: "Parallel", 12: "Local", 13: "Docker"
-            }
-            universe_code = requirements["JobUniverse"]
-            requirements["JobUniverse"] = f"{universe_code} ({universe_map.get(universe_code, 'Unknown')})"
-        
-        # Format memory and disk with units
-        if "RequestMemory" in requirements and requirements["RequestMemory"]:
-            mem_value = requirements["RequestMemory"]
-            if mem_value >= 1024:
-                requirements["RequestMemory"] = f"{mem_value} MB ({mem_value//1024} GB)"
-            else:
-                requirements["RequestMemory"] = f"{mem_value} MB"
-        
-        if "RequestDisk" in requirements and requirements["RequestDisk"]:
-            disk_value = requirements["RequestDisk"]
-            if disk_value >= 1024:
-                requirements["RequestDisk"] = f"{disk_value} MB ({disk_value//1024} GB)"
-            else:
-                requirements["RequestDisk"] = f"{disk_value} MB"
-        
-        # Remove duplicate fields
-        requirements.pop("RequestMemoryMB", None)
-        requirements.pop("RequestDiskMB", None)
-        
-        result = {
-            "success": True,
-            "cluster_id": cluster_id,
-            "requirements": requirements,
-            "note": "Requirements extracted from actual HTCondor job attributes"
-        }
-        
-        log_tool_call(session_id, user_id, "get_job_requirements", {"cluster_id": cluster_id}, result)
-        return result
-        
-    except Exception as e:
-        result = {"success": False, "message": f"Error retrieving job requirements: {str(e)}"}
-        log_tool_call(session_id, user_id, "get_job_requirements", {"cluster_id": cluster_id}, result)
-        return result
 
-
-def get_job_environment(cluster_id: int, tool_context=None) -> dict:
-    """Get job environment variables."""
-    session_id, user_id = get_session_context(tool_context)
-    
-    try:
-        schedd = htcondor.Schedd()
-        ads = schedd.query(f"ClusterId == {cluster_id}")
-        if not ads:
-            result = {"success": False, "message": "Job not found"}
-            log_tool_call(session_id, user_id, "get_job_environment", {"cluster_id": cluster_id}, result)
-            return result
-        
-        ad = ads[0]
-        env_vars = {}
-        
-        # Get environment variables - try multiple approaches
-        env = ad.get("Environment")
-        if hasattr(env, "eval"):
-            try:
-                env_str = env.eval()
-                if env_str:
-                    # Try to parse environment string more robustly
-                    # Handle quoted strings and spaces in values
-                    env_str = env_str.strip()
-                    if env_str.startswith('"') and env_str.endswith('"'):
-                        env_str = env_str[1:-1]  # Remove outer quotes
-                    
-                    # Split on space but be careful with quoted values
-                    import re
-                    # This regex handles: VAR=value VAR2="value with spaces" VAR3=simple
-                    pattern = r'(\w+)=(?:"([^"]*)"|([^\s]*))'
-                    matches = re.findall(pattern, env_str)
-                    
-                    for match in matches:
-                        var_name = match[0]
-                        var_value = match[1] if match[1] else match[2]
-                        env_vars[var_name] = var_value
-                        
-            except Exception as e:
-                # If regex parsing fails, try simple approach
-                try:
-                    # Simple space-based splitting as fallback
-                    for pair in env_str.split():
-                        if '=' in pair:
-                            key, value = pair.split('=', 1)
-                            env_vars[key] = value
-                except Exception:
-                    env_vars = {}
-        else:
-            env_vars = {}
-        
-        # Get job configuration fields (these are always available)
-        job_config_fields = {
-            "Cmd": "Command",
-            "Arguments": "Arguments", 
-            "Input": "Input File",
-            "Output": "Output File",
-            "Error": "Error File",
-            "Log": "Log File",
-            "WorkingDir": "Working Directory",
-            "JobUniverse": "Job Universe",
-            "JobStatus": "Job Status"
-        }
-        
-        for field, display_name in job_config_fields.items():
-            v = ad.get(field)
-            if hasattr(v, "eval"):
-                try:
-                    v = v.eval()
-                except Exception:
-                    v = None
-            if v is not None:
-                # Format special fields
-                if field == "JobStatus":
-                    status_map = {
-                        1: "Idle", 2: "Running", 3: "Removed", 4: "Completed",
-                        5: "Held", 6: "Transferring Output", 7: "Suspended"
-                    }
-                    v = f"{v} ({status_map.get(v, 'Unknown')})"
-                elif field == "JobUniverse":
-                    universe_map = {
-                        1: "Standard", 2: "Pipes", 3: "Linda", 4: "PVM",
-                        5: "Vanilla", 6: "Scheduler", 7: "MPI", 9: "Grid",
-                        10: "Java", 11: "Parallel", 12: "Local", 13: "Docker"
-                    }
-                    v = f"{v} ({universe_map.get(v, 'Unknown')})"
-                elif field == "Arguments" and not v:
-                    v = "(none)"
-                elif field in ["Input", "Output", "Error", "Log"] and not v:
-                    v = "(default)"
-                
-                env_vars[f"JOB_{display_name.replace(' ', '_')}"] = v
-        
-        # Add some computed fields for better understanding
-        if not env_vars:
-            env_vars["NOTE"] = "No custom environment variables found. Showing job configuration instead."
-        
-        result = {
-            "success": True,
-            "cluster_id": cluster_id,
-            "environment_variables": env_vars,
-            "note": "Environment variables and job configuration extracted from actual HTCondor job attributes"
-        }
-        
-        log_tool_call(session_id, user_id, "get_job_environment", {"cluster_id": cluster_id}, result)
-        return result
-        
-    except Exception as e:
-        result = {"success": False, "message": f"Error retrieving job environment: {str(e)}"}
-        log_tool_call(session_id, user_id, "get_job_environment", {"cluster_id": cluster_id}, result)
-        return result
 
 
 # ===== SIMPLE SESSION MANAGEMENT TOOLS =====
@@ -1211,8 +1102,6 @@ ADK_AF_TOOLS = {
     
     # Advanced Job Information
     "get_job_history": FunctionTool(func=get_job_history),
-    "get_job_requirements": FunctionTool(func=get_job_requirements),
-    "get_job_environment": FunctionTool(func=get_job_environment),
     
     # Simple Session Management Tools
     "create_session": FunctionTool(func=create_session),
@@ -1243,11 +1132,11 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
     schemas = []
     for name, inst in ADK_AF_TOOLS.items():
         try:
-            if not inst.name:
-                inst.name = name
+        if not inst.name:
+            inst.name = name
             logging.info(f"Converting tool schema for: {name}")
-            schema = adk_to_mcp_tool_type(inst)
-            schemas.append(schema)
+        schema = adk_to_mcp_tool_type(inst)
+        schemas.append(schema)
             logging.info(f"Successfully converted tool schema for: {name}")
         except Exception as e:
             logging.error(f"Error converting tool schema for '{name}': {e}", exc_info=True)
