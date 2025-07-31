@@ -1955,7 +1955,7 @@ async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextConten
     
     # Extract session context from arguments if present (but don't remove required parameters)
     # Note: If no session_id is provided, the tool functions will automatically create one
-    session_id = tool_args.pop('session_id', None)
+    session_id = tool_args.get('session_id', None)
     tool_context = {'session_id': session_id} if session_id else None
     
     logging.info(f"Extracted session_id: {session_id}, tool_context: {tool_context}")
