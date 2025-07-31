@@ -1230,10 +1230,10 @@ ADK_AF_TOOLS = {
     # "get_queue_stats": FunctionTool(func=get_queue_stats),
     # "get_system_load": FunctionTool(func=get_system_load),
     
-    # Reporting and Analytics - temporarily disabled for debugging
-    # "generate_job_report": FunctionTool(func=generate_job_report),
-    # "get_utilization_stats": FunctionTool(func=get_utilization_stats),
-    # "export_job_data": FunctionTool(func=export_job_data),
+    # Reporting and Analytics
+    "generate_job_report": FunctionTool(func=generate_job_report),
+    "get_utilization_stats": FunctionTool(func=get_utilization_stats),
+    "export_job_data": FunctionTool(func=export_job_data),
 }
 
 
