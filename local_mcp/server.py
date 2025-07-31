@@ -1132,11 +1132,11 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
     schemas = []
     for name, inst in ADK_AF_TOOLS.items():
         try:
-        if not inst.name:
-            inst.name = name
+            if not inst.name:
+                inst.name = name
             logging.info(f"Converting tool schema for: {name}")
-        schema = adk_to_mcp_tool_type(inst)
-        schemas.append(schema)
+            schema = adk_to_mcp_tool_type(inst)
+            schemas.append(schema)
             logging.info(f"Successfully converted tool schema for: {name}")
         except Exception as e:
             logging.error(f"Error converting tool schema for '{name}': {e}", exc_info=True)
