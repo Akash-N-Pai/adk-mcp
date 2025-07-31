@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import datetime
+import getpass
 from collections import defaultdict
 
 import mcp.server.stdio
@@ -45,15 +46,74 @@ def get_session_context(tool_context=None):
         return tool_context.get('session_id'), tool_context.get('user_id')
     return None, None
 
-def ensure_session_exists(tool_context=None):
+def get_last_active_session(user_id=None):
+    """Get the last active session for a user."""
+    if user_id is None:
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
+    
+    try:
+        with sqlite3.connect(session_manager.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT session_id, created_at, last_activity 
+                FROM sessions 
+                WHERE user_id = ? AND is_active = 1 
+                ORDER BY last_activity DESC 
+                LIMIT 1
+            """, (user_id,))
+            row = cursor.fetchone()
+            return row if row else None
+    except Exception as e:
+        logging.error(f"Error getting last active session: {e}")
+        return None
+
+def get_all_user_sessions_summary(user_id=None):
+    """Get a summary of all sessions for a user."""
+    if user_id is None:
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
+    
+    try:
+        with sqlite3.connect(session_manager.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT s.session_id, s.created_at, s.last_activity, COUNT(c.conversation_id) as conversation_count
+                FROM sessions s 
+                LEFT JOIN conversations c ON s.session_id = c.session_id 
+                WHERE s.user_id = ? 
+                GROUP BY s.session_id 
+                ORDER BY s.last_activity DESC
+            """, (user_id,))
+            return [dict(zip(['session_id', 'created_at', 'last_activity', 'conversation_count'], row)) for row in cursor.fetchall()]
+    except Exception as e:
+        logging.error(f"Error getting user sessions summary: {e}")
+        return []
+
+def ensure_session_exists(tool_context=None, continue_last_session=True):
     """Ensure a session exists, create one if it doesn't."""
     session_id, user_id = get_session_context(tool_context)
     
     if session_id is None:
-        # Create a new session automatically
-        user_id = "anonymous"  # Default user ID
+        # Get current system username
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
+        
+        if continue_last_session:
+            # Try to continue the last active session
+            last_session = get_last_active_session(user_id)
+            if last_session:
+                session_id = last_session[0]
+                logging.info(f"Continuing last active session {session_id} for user {user_id}")
+                return session_id, user_id
+        
+        # Create a new session
         session_id = session_manager.create_session(user_id, {})
-        logging.info(f"Auto-created session {session_id} for user {user_id}")
+        logging.info(f"Created new session {session_id} for user {user_id}")
     
     return session_id, user_id
 
@@ -451,6 +511,13 @@ def get_session_history(session_id: str, tool_context=None) -> dict:
         session_info = session_manager.get_session_context(session_id)
         user_id = session_info.get('user_id', 'unknown') if isinstance(session_info, dict) else 'unknown'
     
+    # If still no user_id, try to get current system user
+    if user_id == 'unknown':
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
+    
     try:
         if not session_manager.validate_session(session_id):
             result = {
@@ -500,6 +567,145 @@ def get_session_history(session_id: str, tool_context=None) -> dict:
         log_tool_call(session_id, user_id, "get_session_history", {"session_id": session_id}, result)
         return result
 
+def list_user_sessions(user_id: str = None, tool_context=None) -> dict:
+    """List all sessions for the current user."""
+    if user_id is None:
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
+    
+    try:
+        sessions = get_all_user_sessions_summary(user_id)
+        
+        result = {
+            "success": True,
+            "user_id": user_id,
+            "total_sessions": len(sessions),
+            "sessions": sessions
+        }
+        
+        log_tool_call(None, user_id, "list_user_sessions", {"user_id": user_id}, result)
+        return result
+        
+    except Exception as e:
+        result = {
+            "success": False,
+            "message": f"Failed to list user sessions: {str(e)}"
+        }
+        log_tool_call(None, user_id, "list_user_sessions", {"user_id": user_id}, result)
+        return result
+
+def continue_last_session(user_id: str = None, tool_context=None) -> dict:
+    """Continue the last active session for the user."""
+    if user_id is None:
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
+    
+    try:
+        last_session = get_last_active_session(user_id)
+        
+        if last_session:
+            session_id = last_session[0]
+            session_info = session_manager.get_session_context(session_id)
+            
+            result = {
+                "success": True,
+                "message": f"Continuing session {session_id}",
+                "session_id": session_id,
+                "session_info": session_info
+            }
+        else:
+            result = {
+                "success": False,
+                "message": "No active sessions found for user"
+            }
+        
+        log_tool_call(last_session[0] if last_session else None, user_id, "continue_last_session", {"user_id": user_id}, result)
+        return result
+        
+    except Exception as e:
+        result = {
+            "success": False,
+            "message": f"Failed to continue last session: {str(e)}"
+        }
+        log_tool_call(None, user_id, "continue_last_session", {"user_id": user_id}, result)
+        return result
+
+def get_user_conversation_memory(user_id: str = None, limit: int = 50, tool_context=None) -> dict:
+    """Get conversation memory across all sessions for a user."""
+    if user_id is None:
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
+    
+    try:
+        # Get all sessions for the user
+        sessions = get_all_user_sessions_summary(user_id)
+        
+        # Get conversation history from all sessions
+        all_conversations = []
+        for session in sessions:
+            session_id = session['session_id']
+            history = session_manager.get_conversation_history(session_id, limit=limit)
+            
+            for entry in history:
+                try:
+                    tool_data = eval(entry['content']) if isinstance(entry['content'], str) else entry['content']
+                    
+                    conversation_entry = {
+                        "session_id": session_id,
+                        "timestamp": entry['timestamp'],
+                        "tool_name": tool_data.get('tool_name', 'Unknown'),
+                        "arguments": tool_data.get('arguments', {}),
+                        "result_summary": str(tool_data.get('result', {}))[:200] + "..." if len(str(tool_data.get('result', {}))) > 200 else str(tool_data.get('result', {}))
+                    }
+                    all_conversations.append(conversation_entry)
+                except Exception:
+                    continue
+        
+        # Sort by timestamp
+        all_conversations.sort(key=lambda x: x['timestamp'])
+        
+        # Extract key information
+        job_references = set()
+        tool_usage = {}
+        
+        for conv in all_conversations:
+            # Count tool usage
+            tool_name = conv['tool_name']
+            tool_usage[tool_name] = tool_usage.get(tool_name, 0) + 1
+            
+            # Extract job references
+            args = conv['arguments']
+            if 'cluster_id' in args:
+                job_references.add(args['cluster_id'])
+        
+        result = {
+            "success": True,
+            "user_id": user_id,
+            "total_sessions": len(sessions),
+            "total_conversations": len(all_conversations),
+            "recent_conversations": all_conversations[-limit:],  # Most recent conversations
+            "job_references": list(job_references),
+            "tool_usage_summary": tool_usage,
+            "sessions_summary": sessions
+        }
+        
+        log_tool_call(None, user_id, "get_user_conversation_memory", {"user_id": user_id, "limit": limit}, result)
+        return result
+        
+    except Exception as e:
+        result = {
+            "success": False,
+            "message": f"Failed to get user conversation memory: {str(e)}"
+        }
+        log_tool_call(None, user_id, "get_user_conversation_memory", {"user_id": user_id, "limit": limit}, result)
+        return result
+
 def get_session_summary(session_id: str, tool_context=None) -> dict:
     """Get a summary of what was done in a session."""
     # Get user_id from session context, but use the provided session_id
@@ -508,6 +714,13 @@ def get_session_summary(session_id: str, tool_context=None) -> dict:
         # Try to get user_id from the session itself
         session_info = session_manager.get_session_context(session_id)
         user_id = session_info.get('user_id', 'unknown') if isinstance(session_info, dict) else 'unknown'
+    
+    # If still no user_id, try to get current system user
+    if user_id == 'unknown':
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
     
     try:
         if not session_manager.validate_session(session_id):
@@ -1292,8 +1505,11 @@ ADK_AF_TOOLS = {
     "get_job_history": FunctionTool(func=get_job_history),
     
     # Session Management
+    "list_user_sessions": FunctionTool(func=list_user_sessions),
+    "continue_last_session": FunctionTool(func=continue_last_session),
     "get_session_history": FunctionTool(func=get_session_history),
     "get_session_summary": FunctionTool(func=get_session_summary),
+    "get_user_conversation_memory": FunctionTool(func=get_user_conversation_memory),
     
     # Reporting and Analytics
     "generate_job_report": FunctionTool(func=generate_job_report),
