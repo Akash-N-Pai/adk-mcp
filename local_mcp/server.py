@@ -296,10 +296,10 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
         for field_name, display_name in useful_fields.items():
             v = ad.get(field_name)
             if hasattr(v, "eval"):
-            try:
-                v = v.eval()
-            except Exception:
-                v = None
+                try:
+                    v = v.eval()
+                except Exception:
+                    v = None
             if v is not None:
                 # Format special fields
                 if field_name == "JobStatus":
