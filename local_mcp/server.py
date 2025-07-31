@@ -138,14 +138,14 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
     session_id, user_id = get_session_context(tool_context)
     
     try:
-    schedd = htcondor.Schedd()
-    ads = schedd.query(f"ClusterId == {cluster_id}")
-    if not ads:
+        schedd = htcondor.Schedd()
+        ads = schedd.query(f"ClusterId == {cluster_id}")
+        if not ads:
             result = {"success": False, "message": "Job not found"}
             log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
             return result
         
-    ad = ads[0]
+        ad = ads[0]
         job_info = {}
         
         # Extract only the most useful information from the raw HTCondor output
@@ -182,11 +182,11 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
         
         for field_name, display_name in useful_fields.items():
             v = ad.get(field_name)
-        if hasattr(v, "eval"):
-            try:
-                v = v.eval()
-            except Exception:
-                v = None
+            if hasattr(v, "eval"):
+                try:
+                    v = v.eval()
+                except Exception:
+                    v = None
             if v is not None:
                 # Format special fields
                 if field_name == "JobStatus":
