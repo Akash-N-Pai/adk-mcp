@@ -78,21 +78,9 @@ def get_all_user_sessions_summary(user_id=None):
             user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
     
     logging.info(f"Getting sessions for user: {user_id}")
-    logging.info(f"Database path: {session_manager.db_path}")
     
     try:
-        # First, let's check if the database file exists
-        if not session_manager.db_path.exists():
-            logging.error(f"Database file does not exist: {session_manager.db_path}")
-            return []
-        
         with sqlite3.connect(session_manager.db_path) as conn:
-            # First, let's check what users exist in the database
-            cursor = conn.execute("SELECT DISTINCT user_id FROM sessions")
-            users = [row[0] for row in cursor.fetchall()]
-            logging.info(f"All users in database: {users}")
-            
-            # Now run the actual query
             cursor = conn.execute("""
                 SELECT s.session_id, s.created_at, s.last_activity, COUNT(c.conversation_id) as conversation_count
                 FROM sessions s 
@@ -107,7 +95,7 @@ def get_all_user_sessions_summary(user_id=None):
             logging.info(f"Returning sessions: {result}")
             return result
     except Exception as e:
-        logging.error(f"Error getting user sessions summary: {e}", exc_info=True)
+        logging.error(f"Error getting user sessions summary: {e}")
         return []
 
 def ensure_session_exists(tool_context=None, continue_last_session=True):
