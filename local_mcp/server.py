@@ -468,10 +468,13 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
 
 def create_session(user_id: str, metadata: Optional[dict] = None, tool_context=None) -> dict:
     """Create a new session for a user."""
+    # Get combined session context manager
+    scm = get_session_context_manager()
+    
     session_id, _ = get_session_context(tool_context)  # We don't need user_id here since we're creating a session
     
     try:
-        session_id = session_manager.create_session(user_id, metadata)
+        session_id = scm.create_session(user_id, metadata)
         result = {
             "success": True,
             "session_id": session_id,
@@ -491,16 +494,19 @@ def create_session(user_id: str, metadata: Optional[dict] = None, tool_context=N
 
 def get_session_info(session_id: str, tool_context=None) -> dict:
     """Get information about a session."""
+    # Get combined session context manager
+    scm = get_session_context_manager()
+    
     _, user_id = get_session_context(tool_context)  # We don't need session_id here since it's a parameter
     
     try:
-        if not session_manager.validate_session(session_id):
+        if not scm.validate_session(session_id):
             return {
                 "success": False,
                 "message": "Invalid or expired session"
             }
         
-        context = session_manager.get_session_context(session_id)
+        context = scm.get_session_context(session_id)
         result = {
             "success": True,
             "session_info": context
@@ -518,11 +524,14 @@ def get_session_info(session_id: str, tool_context=None) -> dict:
 
 def end_session(session_id: str, tool_context=None) -> dict:
     """End a session."""
+    # Get combined session context manager
+    scm = get_session_context_manager()
+    
     _, user_id = get_session_context(tool_context)  # We don't need session_id here since it's a parameter
     
     try:
-        if session_manager.validate_session(session_id):
-            session_manager.deactivate_session(session_id)
+        if scm.validate_session(session_id):
+            scm.deactivate_session(session_id)
             result = {
                 "success": True,
                 "message": "Session ended successfully"
@@ -545,11 +554,14 @@ def end_session(session_id: str, tool_context=None) -> dict:
 
 def get_session_history(session_id: str, tool_context=None) -> dict:
     """Get conversation history for a specific session."""
+    # Get combined session context manager
+    scm = get_session_context_manager()
+    
     # Get user_id from session context, but use the provided session_id
     _, user_id = get_session_context(tool_context)
     if user_id is None:
         # Try to get user_id from the session itself
-        session_info = session_manager.get_session_context(session_id)
+        session_info = scm.get_session_context(session_id)
         user_id = session_info.get('user_id', 'unknown') if isinstance(session_info, dict) else 'unknown'
     
     # If still no user_id, try to get current system user
@@ -560,7 +572,7 @@ def get_session_history(session_id: str, tool_context=None) -> dict:
             user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
     
     try:
-        if not session_manager.validate_session(session_id):
+        if not scm.validate_session(session_id):
             result = {
                 "success": False,
                 "message": "Invalid or expired session"
@@ -569,7 +581,7 @@ def get_session_history(session_id: str, tool_context=None) -> dict:
             return result
         
         # Get conversation history from database
-        history = session_manager.get_conversation_history(session_id)
+        history = scm.get_conversation_history(session_id)
         
         # Parse and format the history
         formatted_history = []
@@ -594,7 +606,7 @@ def get_session_history(session_id: str, tool_context=None) -> dict:
             "session_id": session_id,
             "total_entries": len(formatted_history),
             "conversation_history": formatted_history,
-            "session_info": session_manager.get_session_context(session_id)
+            "session_info": scm.get_session_context(session_id)
         }
         
         log_tool_call(session_id, user_id, "get_session_history", {"session_id": session_id}, result)
@@ -645,6 +657,9 @@ def list_user_sessions(user_id: Optional[str] = None, tool_context=None) -> dict
 
 def continue_last_session(user_id: Optional[str] = None, tool_context=None) -> dict:
     """Continue the last active session for the user."""
+    # Get combined session context manager
+    scm = get_session_context_manager()
+    
     if user_id is None:
         try:
             user_id = getpass.getuser()
@@ -656,7 +671,7 @@ def continue_last_session(user_id: Optional[str] = None, tool_context=None) -> d
         
         if last_session:
             session_id = last_session[0]
-            session_info = session_manager.get_session_context(session_id)
+            session_info = scm.get_session_context(session_id)
             
             result = {
                 "success": True,
@@ -693,11 +708,14 @@ def get_user_conversation_memory(user_id: Optional[str] = None, limit: int = 50,
         # Get all sessions for the user
         sessions = get_all_user_sessions_summary(user_id)
         
+        # Get combined session context manager
+        scm = get_session_context_manager()
+        
         # Get conversation history from all sessions
         all_conversations = []
         for session in sessions:
             session_id = session['session_id']
-            history = session_manager.get_conversation_history(session_id, limit=limit)
+            history = scm.get_conversation_history(session_id, limit=limit)
             
             for entry in history:
                 try:
@@ -755,11 +773,14 @@ def get_user_conversation_memory(user_id: Optional[str] = None, limit: int = 50,
 
 def get_session_summary(session_id: str, tool_context=None) -> dict:
     """Get a summary of what was done in a session."""
+    # Get combined session context manager
+    scm = get_session_context_manager()
+    
     # Get user_id from session context, but use the provided session_id
     _, user_id = get_session_context(tool_context)
     if user_id is None:
         # Try to get user_id from the session itself
-        session_info = session_manager.get_session_context(session_id)
+        session_info = scm.get_session_context(session_id)
         user_id = session_info.get('user_id', 'unknown') if isinstance(session_info, dict) else 'unknown'
     
     # If still no user_id, try to get current system user
@@ -770,7 +791,7 @@ def get_session_summary(session_id: str, tool_context=None) -> dict:
             user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
     
     try:
-        if not session_manager.validate_session(session_id):
+        if not scm.validate_session(session_id):
             result = {
                 "success": False,
                 "message": "Invalid or expired session"
@@ -779,7 +800,7 @@ def get_session_summary(session_id: str, tool_context=None) -> dict:
             return result
         
         # Get conversation history
-        history = session_manager.get_conversation_history(session_id)
+        history = scm.get_conversation_history(session_id)
         
         # Analyze the history
         tool_counts = {}
@@ -813,7 +834,7 @@ def get_session_summary(session_id: str, tool_context=None) -> dict:
             "tools_used": tool_counts,
             "jobs_referenced": list(job_references),
             "last_activity": last_activity,
-            "session_info": session_manager.get_session_context(session_id)
+            "session_info": scm.get_session_context(session_id)
         }
         
         result = {
@@ -1714,8 +1735,8 @@ def search_job_memory(query: str, tool_context=None) -> dict:
 
 def get_user_context_summary(tool_context=None) -> dict:
     """Get a comprehensive summary of the user's context and history."""
-    # Get proper ADK context
-    context_manager = get_context_manager()
+    # Get combined session context manager
+    scm = get_session_context_manager()
     
     # Extract session info from tool_context if available
     session_id = None
@@ -1731,7 +1752,7 @@ def get_user_context_summary(tool_context=None) -> dict:
     
     try:
         # Get user memory
-        user_memory = context_manager.get_user_memory(user_id)
+        user_memory = scm.get_user_memory(user_id)
         
         # Get current session context
         current_context = None
@@ -1757,7 +1778,7 @@ def get_user_context_summary(tool_context=None) -> dict:
             "recent_job_history": recent_jobs,
             "user_preferences": preferences,
             "memory_entries": len(user_memory),
-            "session_active": session_manager.validate_session(session_id) if session_id else False
+            "session_active": scm.validate_session(session_id) if session_id else False
         }
         
         log_tool_call(session_id, user_id, "get_user_context_summary", {}, result)
@@ -1771,8 +1792,8 @@ def get_user_context_summary(tool_context=None) -> dict:
 
 def add_to_memory(key: str, value: str, global_memory: bool = False, tool_context=None) -> dict:
     """Add information to memory using ADK Context."""
-    # Get proper ADK context
-    context_manager = get_context_manager()
+    # Get combined session context manager
+    scm = get_session_context_manager()
     
     # Extract session info from tool_context if available
     session_id = None
@@ -1788,7 +1809,7 @@ def add_to_memory(key: str, value: str, global_memory: bool = False, tool_contex
     
     try:
         # Add to memory using context manager
-        context_manager.add_to_memory(user_id, key, value, global_memory)
+        scm.add_to_memory(user_id, key, value, global_memory)
         
         result = {
             "success": True,
