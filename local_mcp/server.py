@@ -78,9 +78,21 @@ def get_all_user_sessions_summary(user_id=None):
             user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
     
     logging.info(f"Getting sessions for user: {user_id}")
+    logging.info(f"Database path: {session_manager.db_path}")
     
     try:
+        # First, let's check if the database file exists
+        if not session_manager.db_path.exists():
+            logging.error(f"Database file does not exist: {session_manager.db_path}")
+            return []
+        
         with sqlite3.connect(session_manager.db_path) as conn:
+            # First, let's check what users exist in the database
+            cursor = conn.execute("SELECT DISTINCT user_id FROM sessions")
+            users = [row[0] for row in cursor.fetchall()]
+            logging.info(f"All users in database: {users}")
+            
+            # Now run the actual query
             cursor = conn.execute("""
                 SELECT s.session_id, s.created_at, s.last_activity, COUNT(c.conversation_id) as conversation_count
                 FROM sessions s 
@@ -95,7 +107,7 @@ def get_all_user_sessions_summary(user_id=None):
             logging.info(f"Returning sessions: {result}")
             return result
     except Exception as e:
-        logging.error(f"Error getting user sessions summary: {e}")
+        logging.error(f"Error getting user sessions summary: {e}", exc_info=True)
         return []
 
 def ensure_session_exists(tool_context=None, continue_last_session=True):
@@ -216,14 +228,14 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
     session_id, user_id = ensure_session_exists(tool_context)
     
     try:
-        schedd = htcondor.Schedd()
-        ads = schedd.query(f"ClusterId == {cluster_id}")
-        if not ads:
+    schedd = htcondor.Schedd()
+    ads = schedd.query(f"ClusterId == {cluster_id}")
+    if not ads:
             result = {"success": False, "message": "Job not found"}
             log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
             return result
         
-        ad = ads[0]
+    ad = ads[0]
         job_info = {}
         
         # Extract only the most useful information from the raw HTCondor output
@@ -260,11 +272,11 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
         
         for field_name, display_name in useful_fields.items():
             v = ad.get(field_name)
-            if hasattr(v, "eval"):
-                try:
-                    v = v.eval()
-                except Exception:
-                    v = None
+        if hasattr(v, "eval"):
+            try:
+                v = v.eval()
+            except Exception:
+                v = None
             if v is not None:
                 # Format special fields
                 if field_name == "JobStatus":
@@ -1536,11 +1548,11 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
     schemas = []
     for name, inst in ADK_AF_TOOLS.items():
         try:
-            if not inst.name:
-                inst.name = name
+        if not inst.name:
+            inst.name = name
             logging.info(f"Converting tool schema for: {name}")
-            schema = adk_to_mcp_tool_type(inst)
-            schemas.append(schema)
+        schema = adk_to_mcp_tool_type(inst)
+        schemas.append(schema)
             logging.info(f"Successfully converted tool schema for: {name}")
         except Exception as e:
             logging.error(f"Error converting tool schema for '{name}': {e}", exc_info=True)
