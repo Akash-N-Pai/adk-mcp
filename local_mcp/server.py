@@ -738,6 +738,54 @@ def continue_last_session(user_id: Optional[str] = None, tool_context=None) -> d
         log_tool_call(None, user_id, "continue_last_session", {"user_id": user_id}, result)
         return result
 
+def continue_specific_session(session_id: str, user_id: Optional[str] = None, tool_context=None) -> dict:
+    """Continue a specific session by session ID."""
+    if user_id is None:
+        try:
+            user_id = getpass.getuser()
+        except Exception:
+            user_id = os.getenv('USER', os.getenv('USERNAME', 'unknown'))
+    
+    logging.info(f"continue_specific_session called with session_id: {session_id}, user_id: {user_id}")
+    
+    try:
+        # Get simplified session context manager
+        scm = get_simplified_session_context_manager()
+        
+        # Validate the session
+        if not scm.validate_session(session_id):
+            result = {
+                "success": False,
+                "message": "Invalid or expired session"
+            }
+            log_tool_call(session_id, user_id, "continue_specific_session", {"session_id": session_id, "user_id": user_id}, result)
+            return result
+        
+        # Get session context
+        session_context = scm.get_session_context(session_id)
+        
+        # Update session activity
+        scm.update_session_activity(session_id)
+        
+        result = {
+            "success": True,
+            "session_id": session_id,
+            "user_id": user_id,
+            "session_context": session_context,
+            "message": f"Successfully switched to session {session_id}"
+        }
+        
+        log_tool_call(session_id, user_id, "continue_specific_session", {"session_id": session_id, "user_id": user_id}, result)
+        return result
+        
+    except Exception as e:
+        result = {
+            "success": False,
+            "message": f"Failed to continue specific session: {str(e)}"
+        }
+        log_tool_call(session_id, user_id, "continue_specific_session", {"session_id": session_id, "user_id": user_id}, result)
+        return result
+
 def get_user_conversation_memory(user_id: Optional[str] = None, limit: int = 50, tool_context=None) -> dict:
     """Get conversation memory across all sessions for a user."""
     if user_id is None:
@@ -1859,6 +1907,58 @@ def get_user_context_summary(tool_context=None) -> dict:
         return result
 
 
+def list_htcondor_tools(tool_context=None) -> dict:
+    """List all HTCondor job management tools available."""
+    try:
+        # Define HTCondor-specific tools (job management only)
+        htcondor_tools = {
+            "Basic Job Management": [
+                "list_jobs - List jobs with optional filtering (owner, status, limit)",
+                "get_job_status - Get detailed status for a specific job cluster ID",
+                "submit_job - Submit a new job with submit description"
+            ],
+            "Advanced Job Information": [
+                "get_job_history - Get job execution history for a specific cluster ID"
+            ],
+            "Cluster and Pool Information": [
+                "list_pools - List all HTCondor pools",
+                "get_pool_status - Get status of the current pool",
+                "list_machines - List machines in the pool with optional status filter",
+                "get_machine_status - Get detailed status of a specific machine"
+            ],
+            "Resource Monitoring": [
+                "get_resource_usage - Get resource usage for jobs or overall system",
+                "get_queue_stats - Get queue statistics",
+                "get_system_load - Get system load information"
+            ],
+            "Reporting and Analytics": [
+                "get_utilization_stats - Get resource utilization statistics",
+                "export_job_data - Export job data in various formats (JSON, CSV)",
+                "generate_job_report - Generate comprehensive job reports"
+            ]
+        }
+        
+        result = {
+            "success": True,
+            "message": "HTCondor job management tools available",
+            "total_categories": len(htcondor_tools),
+            "tools": htcondor_tools
+        }
+        
+        # Get session context for logging
+        session_id, user_id = get_session_context(tool_context)
+        log_tool_call(session_id, user_id, "list_htcondor_tools", {}, result)
+        return result
+        
+    except Exception as e:
+        result = {
+            "success": False,
+            "message": f"Failed to list HTCondor tools: {str(e)}"
+        }
+        session_id, user_id = get_session_context(tool_context)
+        log_tool_call(session_id, user_id, "list_htcondor_tools", {}, result)
+        return result
+
 def add_to_memory(key: str, value: str, global_memory: bool = False, tool_context=None) -> dict:
     """Add information to memory using ADK Context."""
     # Get simplified session context manager
@@ -1898,6 +1998,7 @@ def add_to_memory(key: str, value: str, global_memory: bool = False, tool_contex
 
 
 ADK_AF_TOOLS = {
+    "list_htcondor_tools": FunctionTool(func=list_htcondor_tools),
     "list_jobs": FunctionTool(func=list_jobs),
     "get_job_status": FunctionTool(func=get_job_status),
     "submit_job": FunctionTool(func=submit_job),
@@ -1908,6 +2009,7 @@ ADK_AF_TOOLS = {
     # Session Management
     "list_user_sessions": FunctionTool(func=list_user_sessions),
     "continue_last_session": FunctionTool(func=continue_last_session),
+    "continue_specific_session": FunctionTool(func=continue_specific_session),
     "start_fresh_session": FunctionTool(func=start_fresh_session),
     "get_session_history": FunctionTool(func=get_session_history),
     "get_session_summary": FunctionTool(func=get_session_summary),
