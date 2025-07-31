@@ -1,6 +1,6 @@
 # HTCondor MCP Agent for ATLAS Facility
 
-A comprehensive Agent Development Kit (ADK) agent that provides advanced HTCondor management capabilities for the ATLAS Facility. The agent uses a local Model Context Protocol (MCP) server to interact with HTCondor, offering job management, resource monitoring, reporting, and analytics functionality.
+A comprehensive Agent Development Kit (ADK) agent that provides advanced HTCondor management capabilities for the ATLAS Facility. The agent uses a local Model Context Protocol (MCP) server to interact with HTCondor, offering job management, resource monitoring, reporting, and analytics functionality with **Google ADK Context integration** for persistent session management and cross-conversation memory.
 
 ---
 
@@ -36,9 +36,10 @@ make run-agent
 ```
 adk-mcp/
 ├── local_mcp/
-│   ├── agent.py               # ADK agent with comprehensive HTCondor tools
-│   ├── server.py              # MCP server with 15 advanced tools
-│   ├── prompt.py              # Comprehensive prompt with all functionality
+│   ├── agent.py               # ADK agent with session management and context
+│   ├── server.py              # MCP server with 15+ tools including session tools
+│   ├── session_context_simple.py # Simplified 3-table SQLite session management
+│   ├── prompt.py              # Comprehensive prompt with session instructions
 │   ├── __init__.py
 │   └── mcp_server_activity.log # Server activity log (auto-generated)
 ├── tests/
@@ -53,15 +54,17 @@ adk-mcp/
 ├── requirements.txt           # Production dependencies
 ├── requirements-dev.txt       # Development dependencies
 ├── Makefile                   # Development commands
+├── pytest.ini                # Pytest configuration
+├── test_simplified_compatibility.py # Compatibility test script
 ├── .env                       # Environment variables (create this)
 └── readme.md                  # Project documentation
 ```
 
 ---
 
-## 🛠️ Available Tools (15 MCP Tools)
+## 🛠️ Available Tools (21 MCP Tools)
 
-The MCP server exposes comprehensive tools for HTCondor management:
+The MCP server exposes comprehensive tools for HTCondor management and session management:
 
 ### Basic Job Management
 - **`list_jobs(owner, status, limit)`**: List jobs with filtering options
@@ -70,8 +73,6 @@ The MCP server exposes comprehensive tools for HTCondor management:
 
 ### Advanced Job Information
 - **`get_job_history(cluster_id, limit)`**: Get job execution history and events
-- **`get_job_requirements(cluster_id)`**: Get job requirements and constraints
-- **`get_job_environment(cluster_id)`**: Get job environment variables
 
 ### Cluster and Pool Information
 - **`list_pools()`**: List available HTCondor pools
@@ -89,13 +90,26 @@ The MCP server exposes comprehensive tools for HTCondor management:
 - **`get_utilization_stats(time_range)`**: Get resource utilization statistics
 - **`export_job_data(format, filters)`**: Export job data (JSON/CSV/Summary)
 
+### Session Management & Context
+- **`list_htcondor_tools()`**: List only HTCondor job management tools
+- **`list_user_sessions()`**: List all user sessions
+- **`continue_last_session()`**: Continue most recent session
+- **`continue_specific_session(session_id)`**: Continue specific session by ID
+- **`start_fresh_session()`**: Start completely new session
+- **`get_session_history(session_id)`**: Get conversation history for session
+- **`get_session_summary(session_id)`**: Get summary of session activities
+- **`get_user_conversation_memory()`**: Get memory across all sessions
+- **`add_to_memory(key, value, global_memory)`**: Add information to memory
+- **`search_job_memory(query)`**: Search memory for job information
+- **`get_user_context_summary()`**: Get comprehensive user context
+
 All tools return structured JSON responses with success flags and relevant data.
 
 ---
 
 ## 🤖 Agent Capabilities
 
-The agent provides intelligent HTCondor management with these capabilities:
+The agent provides intelligent HTCondor management with **Google ADK Context integration** and these capabilities:
 
 ### Job Management
 - **Smart Filtering**: Filter jobs by owner, status, time ranges
@@ -120,6 +134,13 @@ The agent provides intelligent HTCondor management with these capabilities:
 - **Requirements Analysis**: Understand job constraints and needs
 - **Environment Management**: Monitor job execution environments
 - **Error Handling**: Robust error handling and recovery
+
+### Session Management & Context
+- **Persistent Sessions**: Maintain session state across conversations
+- **Cross-Session Memory**: Remember user preferences and job references
+- **Session Continuity**: Continue previous conversations seamlessly
+- **Context Awareness**: Provide personalized responses based on history
+- **Simplified Database**: 3-table SQLite schema for efficient storage
 
 ---
 
@@ -177,13 +198,29 @@ Resource Usage for Job 1234567:
 - Committed Time: 3.1 hours
 ```
 
+### Session Management
+```
+User: List all my sessions
+Agent: [Calls list_user_sessions()]
+Output:
+Your Sessions:
+| Session ID | Created | Last Activity | Conversations |
+|------------|---------|---------------|---------------|
+| d07b6c99... | 2025-07-31 | 2025-07-31 | 15 |
+
+User: Continue session d07b6c99-ac10-4656-bb9b-24d64e35b2bc
+Agent: [Calls continue_specific_session() and get_session_history()]
+Output:
+Welcome back! I can see you were working with jobs 1234567 and 1234568 earlier...
+```
+
 ---
 
 ## 🧪 Testing & Evaluation
 
 ### Comprehensive Testing
 ```bash
-make test                    # Run all tests (50+ test cases)
+make test                    # Run all tests (41 test cases)
 make test-unit              # Run unit tests only
 make test-integration       # Run integration tests only
 make test-cov               # Run tests with coverage report
@@ -199,10 +236,11 @@ make adk-eval-custom        # Run with custom paths
 
 **Evaluation Coverage:**
 - **30+ Test Cases** covering 7 categories
-- **15 MCP Tools** comprehensively tested
+- **21 MCP Tools** comprehensively tested including session management
 - **Complex Scenarios** including multi-tool interactions
 - **Error Handling** and edge cases
 - **Agent Integration** testing
+- **Session Management** testing
 
 **Test Categories:**
 1. Basic Job Management
@@ -280,9 +318,10 @@ pip install -r requirements.txt
 
 ## 📚 Documentation & References
 
-- **Agent Configuration:** See `local_mcp/agent.py` for agent setup
-- **MCP Server Tools:** See `local_mcp/server.py` for all 15 tool implementations
-- **Agent Prompt:** See `local_mcp/prompt.py` for comprehensive instructions
+- **Agent Configuration:** See `local_mcp/agent.py` for agent setup with session management
+- **MCP Server Tools:** See `local_mcp/server.py` for all 21 tool implementations including session tools
+- **Session Management:** See `local_mcp/session_context_simple.py` for simplified 3-table SQLite schema
+- **Agent Prompt:** See `local_mcp/prompt.py` for comprehensive instructions including session management
 - **Evaluation Framework:** See `evaluation/README.md` for detailed evaluation documentation
 - **Test Suite:** See `tests/test_htcondor_mcp_comprehensive.py` for comprehensive testing
 
@@ -290,9 +329,11 @@ pip install -r requirements.txt
 
 ## 🎯 Key Features
 
-- **15 Advanced MCP Tools** for comprehensive HTCondor management
-- **Intelligent Agent** with context-aware responses
-- **Robust Testing** with 50+ test cases and ADK evaluation framework
+- **21 Advanced MCP Tools** for comprehensive HTCondor management and session control
+- **Google ADK Context Integration** with persistent session management and cross-conversation memory
+- **Simplified 3-Table SQLite Schema** for efficient session and context storage
+- **Intelligent Agent** with context-aware responses and session continuity
+- **Robust Testing** with 41 test cases and ADK evaluation framework
 - **Advanced Monitoring** including resource usage, system load, and analytics
 - **Flexible Reporting** with time-based analysis and data export
 - **Production Ready** with error handling and logging
