@@ -142,29 +142,19 @@ class ADKAgentEvaluationRunner:
                         print(f"📝 Additional line: {additional_line.strip()}")
                         
                         if "[user]:" in additional_line:
-                            print("✅ Agent is waiting for input, sending newline to continue...")
-                            # Send a newline to continue the conversation
-                            self.agent_process.stdin.write("\n")
-                            self.agent_process.stdin.flush()
-                            
-                            # Wait for the actual response
-                            await asyncio.sleep(1.0)
-                            response = ""
-                            start_time = time.time()
-                            
-                            while time.time() - start_time < 5.0:  # 5 second timeout
-                                ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
-                                if ready:
-                                    line = self.agent_process.stdout.readline()
-                                    if line:
-                                        response += line
-                                        print(f"📝 Response line: {line.strip()}")
-                                        
-                                        # Check for end of response
-                                        if "[user]:" in line or not line.strip():
-                                            break
+                            print("✅ Agent responded, extracting response...")
+                            # The agent has already responded, extract the response from the line
+                            if "[htcondor_mcp_client_agent]:" in additional_line:
+                                # Extract just the agent's response part
+                                parts = additional_line.split('[htcondor_mcp_client_agent]:')
+                                if len(parts) > 1:
+                                    response = parts[1].strip()
+                                    print(f"📝 Extracted response: {response}")
                                 else:
-                                    await asyncio.sleep(0.1)
+                                    response = additional_line.strip()
+                            else:
+                                response = additional_line.strip()
+                            break
                 except Exception as e:
                     print(f"🔴 Error handling interactive prompt: {e}")
                 
