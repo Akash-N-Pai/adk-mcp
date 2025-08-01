@@ -118,7 +118,7 @@ class CustomEvaluationRunner:
             # Import proper ADK components
             from google.adk.agents.invocation_context import InvocationContext
             from google.adk.events import Event
-            from google.adk.session import Session, BaseSessionService
+            from google.adk.sessions import Session, BaseSessionService
             from google.adk.user_content import UserContent
             import asyncio
             from datetime import datetime
