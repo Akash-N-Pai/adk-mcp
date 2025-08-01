@@ -107,24 +107,40 @@ class CustomEvaluationRunner:
             # Import ADK components for proper agent interaction (ADK 1.9.0)
             from google.adk.agents.invocation_context import InvocationContext
             from google.adk.events import Event
+            from google.adk.session import Session, SessionService
+            from google.adk.user_content import UserContent
             import asyncio
+            from datetime import datetime
             
-            # Create a simple session object
-            class SimpleSession:
-                def __init__(self, session_id: str):
-                    self.id = session_id
-                    self.state = {}
+            # Create proper Session object
+            session = Session(
+                id="eval_session",
+                state={},
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
             
-            # Create a simple user content object
-            class SimpleUserContent:
-                def __init__(self, text: str):
-                    self.text = text
-                    self.timestamp = None
+            # Create proper UserContent object
+            user_content = UserContent(
+                text=query,
+                timestamp=datetime.now()
+            )
+            
+            # Create a simple session service
+            class SimpleSessionService:
+                async def get_session(self, session_id: str) -> Session:
+                    return session
+                
+                async def update_session(self, session: Session):
+                    pass
+            
+            session_service = SimpleSessionService()
             
             # Create the actual ADK-compatible context
             ctx = InvocationContext(
-                user_content=SimpleUserContent(query),
-                session=SimpleSession("eval_session"),
+                user_content=user_content,
+                session=session,
+                session_service=session_service,
                 invocation_id=f"eval_{hash(query)}",
                 agent=self.agent
             )
