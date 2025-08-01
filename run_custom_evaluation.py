@@ -116,12 +116,16 @@ class CustomEvaluationRunner:
             scm.add_message(eval_session_id, "user_message", query)
             
             # Import proper ADK components
-            from google.adk.agents.invocation_context import InvocationContext
+            from google.adk.agents.invocation_context import InvocationContext, Session, BaseSessionService
             from google.adk.events import Event
-            from google.adk.sessions import Session, BaseSessionService
-            from google.adk.user_content import UserContent
             import asyncio
             from datetime import datetime
+            
+            # Create a simple user content object (since UserContent might not exist)
+            class SimpleUserContent:
+                def __init__(self, text: str):
+                    self.text = text
+                    self.timestamp = datetime.now()
             
             # Create proper ADK Session object (let ADK handle its own session)
             session = Session(
