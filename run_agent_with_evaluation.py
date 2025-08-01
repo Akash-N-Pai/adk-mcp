@@ -131,51 +131,8 @@ class ADKAgentEvaluationRunner:
                     await asyncio.sleep(0.1)
             
             if not response.strip():
-                print("⚠️ No response received, checking if agent is waiting for input...")
-                
-                # Check if agent is waiting for input by looking for the prompt
-                try:
-                    # Wait a bit more and check for the [user]: prompt
-                    await asyncio.sleep(1.0)
-                    
-                    import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 2.0)
-                    if ready:
-                        additional_line = self.agent_process.stdout.readline()
-                        print(f"📝 Additional line: {additional_line.strip()}")
-                        
-                        if "[user]:" in additional_line:
-                            print("✅ Agent responded, extracting response...")
-                            # The agent has already responded, extract the response from the line
-                            if "[htcondor_mcp_client_agent]:" in additional_line:
-                                # Extract just the agent's response part
-                                parts = additional_line.split('[htcondor_mcp_client_agent]:')
-                                if len(parts) > 1:
-                                    response = parts[1].strip()
-                                    print(f"📝 Extracted response: {response}")
-                                else:
-                                    response = additional_line.strip()
-                            else:
-                                response = additional_line.strip()
-                except Exception as e:
-                    print(f"🔴 Error handling interactive prompt: {e}")
-                
-                # Check stderr for any error messages
-                stderr_output = ""
-                try:
-                    while True:
-                        stderr_line = self.agent_process.stderr.readline()
-                        if not stderr_line:
-                            break
-                        stderr_output += stderr_line
-                except:
-                    pass
-                
-                if stderr_output:
-                    print(f"📋 Stderr output: {stderr_output[:200]}...")
-                
-                if not response.strip():
-                    response = "No response received from agent"
+                print("⚠️ No response received, using fallback")
+                response = "No response received from agent"
             
             # Clean up the response
             response = response.strip()
@@ -199,6 +156,10 @@ class ADKAgentEvaluationRunner:
                         cleaned_lines.append(line)
             
             response = '\n'.join(cleaned_lines).strip()
+            
+            # If we still have the [user]: prefix, remove it
+            if response.startswith('[user]:'):
+                response = response[7:].strip()
             
             if response.startswith("Assistant:"):
                 response = response[10:].strip()
