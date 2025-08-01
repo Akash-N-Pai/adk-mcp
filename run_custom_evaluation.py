@@ -130,9 +130,9 @@ class CustomEvaluationRunner:
             # Create proper ADK Session object (let ADK handle its own session)
             session = Session(
                 id=f"adk_session_{eval_session_id}",
-                state={"user_id": eval_user_id},
-                created_at=datetime.now(),
-                updated_at=datetime.now()
+                app_name="htcondor_mcp_evaluation",
+                user_id=eval_user_id,
+                state={"user_id": eval_user_id}
             )
             
             # Create proper ADK UserContent object
