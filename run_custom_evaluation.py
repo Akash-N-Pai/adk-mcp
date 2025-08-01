@@ -104,44 +104,42 @@ class CustomEvaluationRunner:
             if self.agent is None:
                 raise Exception("Agent not available")
             
-            # Import ADK components for proper agent interaction
+            # Import proper ADK components
             from google.adk.agents.invocation_context import InvocationContext
             from google.adk.events import Event
+            from google.adk.session import Session, BaseSessionService
+            from google.adk.user_content import UserContent
             import asyncio
             from datetime import datetime
             
-            # Create simple objects that work with ADK 1.9.0
-            class SimpleSession:
-                def __init__(self, session_id: str):
-                    self.id = session_id
-                    self.state = {"user_id": "eval_user"}
-                    self.created_at = datetime.now()
-                    self.updated_at = datetime.now()
+            # Create proper ADK Session object
+            session = Session(
+                id="eval_session",
+                state={"user_id": "eval_user"},
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
             
-            class SimpleUserContent:
-                def __init__(self, text: str):
-                    self.text = text
-                    self.timestamp = datetime.now()
+            # Create proper ADK UserContent object
+            user_content = UserContent(
+                text=query,
+                timestamp=datetime.now()
+            )
             
-            class SimpleSessionService:
-                def __init__(self):
-                    from local_mcp.session_context_simple import get_simplified_session_context_manager
-                    self.scm = get_simplified_session_context_manager()
+            # Create proper ADK BaseSessionService
+            class EvalSessionService(BaseSessionService):
+                async def get_session(self, session_id: str) -> Session:
+                    return session
                 
-                async def get_session(self, session_id: str):
-                    return SimpleSession(session_id)
+                async def update_session(self, session: Session):
+                    pass
                 
-                async def update_session(self, session):
-                    # Update the session in your local system
-                    if hasattr(session, 'state') and session.state:
-                        user_id = session.state.get('user_id', 'eval_user')
-                        self.scm.update_session_metadata(session.id, session.state)
+                async def create_session(self, user_id: str, metadata: dict = None) -> Session:
+                    return session
             
-            session = SimpleSession("eval_session")
-            user_content = SimpleUserContent(query)
-            session_service = SimpleSessionService()
+            session_service = EvalSessionService()
             
-            # Create the ADK InvocationContext with all required fields
+            # Create the proper ADK InvocationContext
             ctx = InvocationContext(
                 user_content=user_content,
                 session=session,
