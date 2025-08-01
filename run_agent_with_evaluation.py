@@ -128,7 +128,46 @@ class ADKAgentEvaluationRunner:
                     await asyncio.sleep(0.1)
             
             if not response.strip():
-                print("⚠️ No response received, checking stderr...")
+                print("⚠️ No response received, checking if agent is waiting for input...")
+                
+                # Check if agent is waiting for input by looking for the prompt
+                try:
+                    # Wait a bit more and check for the [user]: prompt
+                    await asyncio.sleep(1.0)
+                    
+                    import select
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 2.0)
+                    if ready:
+                        additional_line = self.agent_process.stdout.readline()
+                        print(f"📝 Additional line: {additional_line.strip()}")
+                        
+                        if "[user]:" in additional_line:
+                            print("✅ Agent is waiting for input, sending newline to continue...")
+                            # Send a newline to continue the conversation
+                            self.agent_process.stdin.write("\n")
+                            self.agent_process.stdin.flush()
+                            
+                            # Wait for the actual response
+                            await asyncio.sleep(1.0)
+                            response = ""
+                            start_time = time.time()
+                            
+                            while time.time() - start_time < 5.0:  # 5 second timeout
+                                ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                                if ready:
+                                    line = self.agent_process.stdout.readline()
+                                    if line:
+                                        response += line
+                                        print(f"📝 Response line: {line.strip()}")
+                                        
+                                        # Check for end of response
+                                        if "[user]:" in line or not line.strip():
+                                            break
+                                else:
+                                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    print(f"🔴 Error handling interactive prompt: {e}")
+                
                 # Check stderr for any error messages
                 stderr_output = ""
                 try:
@@ -143,7 +182,8 @@ class ADKAgentEvaluationRunner:
                 if stderr_output:
                     print(f"📋 Stderr output: {stderr_output[:200]}...")
                 
-                response = "No response received from agent"
+                if not response.strip():
+                    response = "No response received from agent"
             
             # Clean up the response
             response = response.strip()
