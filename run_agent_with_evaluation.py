@@ -208,22 +208,38 @@ class ADKAgentEvaluationRunner:
             if any(pattern in response_lower for pattern in patterns):
                 tool_calls.append({"name": tool_name, "args": {}})
         
-        # Special handling for specific queries
+        # Special handling for specific queries based on real conversation patterns
         if "get job status" in query_lower and "6657640" in query:
-            if "cluster id" in response_lower or "status" in response_lower:
+            if "cluster id: 6657640" in response_lower or "status: held" in response_lower:
                 tool_calls.append({"name": "get_job_status", "args": {"cluster_id": 6657640}})
         
         if "list all jobs" in query_lower:
-            if "clusterid" in response_lower or "jobs" in response_lower:
+            if "clusterid\tprocid\tstatus\towner" in response_lower or "jobs from a total" in response_lower:
                 tool_calls.append({"name": "list_jobs", "args": {"owner": None, "status": None, "limit": 10}})
         
         if "list all tools" in query_lower:
-            if "basic job management" in response_lower or "tools organized" in response_lower:
+            if "basic job management" in response_lower or "tools organized by category" in response_lower:
                 tool_calls.append({"name": "list_htcondor_tools", "args": {}})
         
         if "hi" in query_lower:
-            if "previous sessions" in response_lower or "continue" in response_lower:
+            if "previous sessions" in response_lower or "would you like to continue" in response_lower:
                 tool_calls.append({"name": "list_user_sessions", "args": {}})
+        
+        if "create a new session" in query_lower:
+            if "started a fresh session" in response_lower or "new session" in response_lower:
+                tool_calls.append({"name": "start_fresh_session", "args": {}})
+        
+        if "get job history" in query_lower and "6657640" in query:
+            if "job history for cluster id 6657640" in response_lower or "job submitted" in response_lower:
+                tool_calls.append({"name": "get_job_history", "args": {"cluster_id": 6657640}})
+        
+        if "generate job report for jareddb2" in query_lower:
+            if "job report for owner jareddb2" in response_lower or "report metadata" in response_lower:
+                tool_calls.append({"name": "generate_job_report", "args": {"owner": "jareddb2"}})
+        
+        if "get_utilization_stats" in query_lower:
+            if "resource utilization statistics" in response_lower or "utilization statistics" in response_lower:
+                tool_calls.append({"name": "get_utilization_stats", "args": {"time_range": "24h"}})
         
         # Remove duplicates while preserving order
         seen = set()
@@ -303,7 +319,7 @@ class ADKAgentEvaluationRunner:
         print(f"Report saved to: {output_file}")
 
 
-# Test cases (same as before)
+# Test cases based on real conversation flow
 TEST_CASES = [
     {
         "name": "Initial Greeting and Session Management",
@@ -313,11 +329,11 @@ TEST_CASES = [
         "description": "Agent should greet user and check for existing sessions"
     },
     {
-        "name": "List All Tools",
-        "query": "list all the tools",
-        "expected_tools": ["list_htcondor_tools"],
-        "expected_output": "Basic Job Management",
-        "description": "Agent should show organized tool categories"
+        "name": "Create New Session",
+        "query": "create a new session",
+        "expected_tools": ["start_fresh_session"],
+        "expected_output": "started a fresh session",
+        "description": "Agent should create a new session when requested"
     },
     {
         "name": "List All Jobs",
@@ -327,11 +343,39 @@ TEST_CASES = [
         "description": "Agent should list jobs in table format with proper headers"
     },
     {
+        "name": "List All Tools",
+        "query": "list all the tools",
+        "expected_tools": ["list_htcondor_tools"],
+        "expected_output": "Basic Job Management",
+        "description": "Agent should show organized tool categories"
+    },
+    {
         "name": "Get Job Status",
         "query": "get job status of 6657640",
         "expected_tools": ["get_job_status"],
         "expected_output": "Cluster ID: 6657640",
         "description": "Agent should provide detailed job status information"
+    },
+    {
+        "name": "Get Job History",
+        "query": "get job history of of 6657640",
+        "expected_tools": ["get_job_history"],
+        "expected_output": "Job submitted",
+        "description": "Agent should show job execution history with timestamps"
+    },
+    {
+        "name": "Generate Job Report for Owner",
+        "query": "generate job report for jareddb2",
+        "expected_tools": ["generate_job_report"],
+        "expected_output": "job report for owner jareddb2",
+        "description": "Agent should generate comprehensive job report for specific owner"
+    },
+    {
+        "name": "Get Utilization Stats",
+        "query": "get_utilization_stats",
+        "expected_tools": ["get_utilization_stats"],
+        "expected_output": "resource utilization statistics",
+        "description": "Agent should show system utilization statistics"
     }
 ]
 
