@@ -3,3 +3,5 @@ mcp==1.9.1
 deprecated==1.2.13
 htcondor==24.9.2
 langchain>=0.1.0
+langchain-community>=0.1.0
+langsmith>=0.1.0
