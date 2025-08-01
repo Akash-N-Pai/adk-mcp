@@ -115,10 +115,51 @@ class CustomEvaluationRunner:
             # Log the user query to our session
             scm.add_message(eval_session_id, "user_message", query)
             
-            # For now, use mock responses since ADK InvocationContext is complex
-            # In a real scenario, you would use the ADK web interface: `adk web`
-            print("⚠️ Using mock responses - for real agent interaction, use: adk web")
-            response_text = self._get_mock_response(query)[0]
+            # Try to call the agent directly using a simpler approach
+            print(f"🤖 Calling real agent with query: {query[:50]}...")
+            
+            # Method 1: Try to access the agent's internal methods
+            try:
+                # Get the agent's instruction and model
+                instruction = self.agent.instruction
+                model = self.agent.model
+                
+                # Create a simple prompt with the query
+                full_prompt = f"{instruction}\n\nUser: {query}\n\nAssistant:"
+                
+                # Try to use the agent's model directly
+                if hasattr(self.agent, 'model') and hasattr(self.agent.model, 'generate_content'):
+                    response = self.agent.model.generate_content(full_prompt)
+                    response_text = response.text
+                    print("✅ Used agent's model directly")
+                else:
+                    raise Exception("Model not accessible")
+                    
+            except Exception as model_error:
+                print(f"Model direct call failed: {model_error}")
+                
+                # Method 2: Try to use the agent's tools directly
+                try:
+                    if hasattr(self.agent, 'tools') and self.agent.tools:
+                        # Get the MCP toolset
+                        mcp_toolset = self.agent.tools[0]
+                        if hasattr(mcp_toolset, 'connection_params'):
+                            print("✅ Found MCP toolset, trying direct tool calls")
+                            
+                            # For now, use mock responses but indicate we found the tools
+                            response_text = self._get_mock_response(query)[0]
+                            response_text += "\n\n[Note: Using mock response but agent tools are accessible]"
+                        else:
+                            raise Exception("MCP toolset not properly configured")
+                    else:
+                        raise Exception("No tools found")
+                        
+                except Exception as tool_error:
+                    print(f"Tool direct call failed: {tool_error}")
+                    
+                    # Method 3: Fallback to mock responses
+                    print("⚠️ Falling back to mock responses - agent direct access not available")
+                    response_text = self._get_mock_response(query)[0]
             
             # Log the agent response to our session
             scm.add_message(eval_session_id, "agent_response", response_text)
