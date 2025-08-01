@@ -78,6 +78,11 @@ class ADKAgentEvaluationRunner:
             self.agent_process.stdin.write(f"{query}\n")
             self.agent_process.stdin.flush()
             
+            # Send a newline to trigger the agent's response
+            await asyncio.sleep(0.5)  # Give agent time to process
+            self.agent_process.stdin.write("\n")
+            self.agent_process.stdin.flush()
+            
             # Read response from stdout with better timeout handling
             response = ""
             timeout = 15  # Reduced timeout to 15 seconds
@@ -104,8 +109,11 @@ class ADKAgentEvaluationRunner:
                             print(f"📝 Read line: {line.strip()}")
                             
                             # Check for end of response indicators
-                            if "Human:" in line or "User:" in line or "Assistant:" in line:
+                            if "Human:" in line or "User:" in line:
                                 print("✅ Found response end marker")
+                                break
+                            elif "[user]:" in line:  # Agent prompt indicator
+                                print("✅ Found agent prompt, response complete")
                                 break
                             elif not line.strip():  # Empty line might indicate end
                                 print("✅ Found empty line, assuming end of response")
@@ -138,6 +146,20 @@ class ADKAgentEvaluationRunner:
             
             # Clean up the response
             response = response.strip()
+            
+            # Remove log messages and keep only the agent's response
+            lines = response.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                # Skip log messages and keep only agent responses
+                if not any(skip in line.lower() for skip in [
+                    'log setup complete', 'to access latest log', 'running agent', 
+                    'type exit to exit', 'tail -f'
+                ]):
+                    cleaned_lines.append(line)
+            
+            response = '\n'.join(cleaned_lines).strip()
+            
             if response.startswith("Assistant:"):
                 response = response[10:].strip()
             
