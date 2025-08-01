@@ -140,14 +140,26 @@ class CustomEvaluationRunner:
             
             # Create proper ADK BaseSessionService
             class EvalSessionService(BaseSessionService):
-                async def get_session(self, session_id: str) -> Session:
+                async def get_session(self, *, app_name: str, user_id: str, session_id: str, config=None) -> Session:
                     return session
                 
-                async def update_session(self, session: Session):
+                async def create_session(self, *, app_name: str, user_id: str, state=None, session_id=None) -> Session:
+                    return session
+                
+                async def delete_session(self, *, app_name: str, user_id: str, session_id: str):
                     pass
                 
-                async def create_session(self, user_id: str, metadata: dict = None) -> Session:
-                    return session
+                async def list_sessions(self, *, app_name: str, user_id: str):
+                    from google.adk.sessions import ListSessionsResponse
+                    return ListSessionsResponse(sessions=[session])
+                
+                async def list_events(self, *, app_name: str, user_id: str, session_id: str):
+                    from google.adk.sessions import ListEventsResponse
+                    return ListEventsResponse(events=[])
+                
+                async def append_event(self, session: Session, event):
+                    from google.adk.events import Event
+                    return event
             
             session_service = EvalSessionService()
             
