@@ -314,7 +314,7 @@ class ADKAgentEvaluationRunner:
                 tool_calls.append({"name": "list_user_sessions", "args": {}})
         
         if "create a new session" in query_lower:
-            if "started a fresh session" in response_lower or "new session" in response_lower:
+            if "started a fresh session" in response_lower or "new session" in response_lower or "started a fresh session for you" in response_lower:
                 tool_calls.append({"name": "start_fresh_session", "args": {}})
         
         if "get job history" in query_lower and "6657640" in query:
@@ -420,7 +420,7 @@ TEST_CASES = [
         "name": "Create New Session",
         "query": "create a new session",
         "expected_tools": ["start_fresh_session"],
-        "expected_output": "started a fresh session",
+        "expected_output": "started a fresh session for you",
         "description": "Agent should create a new session when requested"
     },
     {
