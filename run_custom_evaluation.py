@@ -104,10 +104,77 @@ class CustomEvaluationRunner:
             if self.agent is None:
                 raise Exception("Agent not available")
             
-            # For now, use mock responses since ADK InvocationContext is complex
-            # In a real scenario, you would use the ADK web interface or CLI
-            print("⚠️ Using mock responses - real agent interaction requires ADK web interface")
-            return self._get_mock_response(query)[0]
+            # Import ADK components for proper agent interaction
+            from google.adk.agents.invocation_context import InvocationContext
+            from google.adk.events import Event
+            import asyncio
+            from datetime import datetime
+            
+            # Create a simple session object that matches what your agent expects
+            class SimpleSession:
+                def __init__(self, session_id: str):
+                    self.id = session_id
+                    self.state = {"user_id": "eval_user"}
+            
+            # Create a simple user content object
+            class SimpleUserContent:
+                def __init__(self, text: str):
+                    self.text = text
+                    self.timestamp = datetime.now()
+            
+            # Try to create InvocationContext without session_service first
+            try:
+                ctx = InvocationContext(
+                    user_content=SimpleUserContent(query),
+                    session=SimpleSession("eval_session"),
+                    invocation_id=f"eval_{hash(query)}",
+                    agent=self.agent
+                )
+            except Exception as ctx_error:
+                # If that fails, try with minimal required fields
+                print(f"First attempt failed: {ctx_error}")
+                try:
+                    # Try with just the essential fields
+                    ctx = InvocationContext(
+                        user_content=SimpleUserContent(query),
+                        invocation_id=f"eval_{hash(query)}",
+                        agent=self.agent
+                    )
+                except Exception as ctx_error2:
+                    print(f"Second attempt failed: {ctx_error2}")
+                    # Last resort: try to call agent methods directly
+                    if hasattr(self.agent, 'run'):
+                        return await self.agent.run(query)
+                    elif hasattr(self.agent, 'chat'):
+                        return await self.agent.chat(query)
+                    else:
+                        raise Exception("No suitable agent method found")
+            
+            # Call the agent's _run_async_impl method
+            response_events = []
+            async for event in self.agent._run_async_impl(ctx):
+                response_events.append(event)
+            
+            # Extract text from events
+            response_text = ""
+            for event in response_events:
+                if hasattr(event, 'text'):
+                    response_text += event.text
+                elif hasattr(event, 'content'):
+                    response_text += str(event.content)
+                else:
+                    response_text += str(event)
+            
+            if not response_text.strip():
+                # Fallback: try direct method calls
+                if hasattr(self.agent, 'run'):
+                    response_text = await self.agent.run(query)
+                elif hasattr(self.agent, 'chat'):
+                    response_text = await self.agent.chat(query)
+                else:
+                    raise Exception("No suitable agent method found")
+            
+            return str(response_text)
             
         except Exception as e:
             print(f"Agent interaction failed: {e}")
