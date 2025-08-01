@@ -74,18 +74,20 @@ class ADKAgentEvaluationRunner:
             # Send the query to the agent
             print(f"📤 Sending query: {query[:50]}...")
             
-            # Clear any existing output buffer first
-            print("🧹 Clearing output buffer...")
-            while True:
-                try:
-                    import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
-                    if ready:
-                        self.agent_process.stdout.readline()
-                    else:
+            # Only clear buffer on first query or if we detect stale data
+            if not hasattr(self, '_first_query_sent'):
+                print("🧹 Clearing initial output buffer...")
+                self._first_query_sent = True
+                while True:
+                    try:
+                        import select
+                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                        if ready:
+                            self.agent_process.stdout.readline()
+                        else:
+                            break
+                    except:
                         break
-                except:
-                    break
             
             # Write query to agent's stdin with proper formatting
             self.agent_process.stdin.write(f"{query}\n")
@@ -146,8 +148,32 @@ class ADKAgentEvaluationRunner:
                     await asyncio.sleep(0.2)
             
             if not response.strip():
-                print("⚠️ No response received, using fallback")
-                response = "No response received from agent"
+                print("⚠️ No response received, waiting longer...")
+                # Wait a bit more and try to read again
+                await asyncio.sleep(2.0)
+                
+                # Try to read any remaining response
+                while True:
+                    try:
+                        import select
+                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.5)
+                        if ready:
+                            line = self.agent_process.stdout.readline()
+                            if line:
+                                response += line
+                                print(f"📝 Additional line: {line.strip()}")
+                                
+                                if "[user]:" in line:
+                                    print("✅ Found delayed response")
+                                    break
+                        else:
+                            break
+                    except:
+                        break
+                
+                if not response.strip():
+                    print("⚠️ Still no response, using fallback")
+                    response = "No response received from agent"
             
             # Clean up the response
             response = response.strip()
