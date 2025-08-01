@@ -107,48 +107,51 @@ class CustomEvaluationRunner:
             # Import ADK components for proper agent interaction
             from google.adk.agents.invocation_context import InvocationContext
             from google.adk.events import Event
+            from google.adk.session import Session, SessionService
+            from google.adk.user_content import UserContent
             import asyncio
             from datetime import datetime
             
-            # Create a simple session object that matches what your agent expects
-            class SimpleSession:
-                def __init__(self, session_id: str):
-                    self.id = session_id
-                    self.state = {"user_id": "eval_user"}
+            # Create proper ADK Session object
+            session = Session(
+                id="eval_session",
+                state={"user_id": "eval_user"},
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
             
-            # Create a simple user content object
-            class SimpleUserContent:
-                def __init__(self, text: str):
-                    self.text = text
-                    self.timestamp = datetime.now()
+            # Create proper ADK UserContent object
+            user_content = UserContent(
+                text=query,
+                timestamp=datetime.now()
+            )
             
-            # Try to create InvocationContext without session_service first
-            try:
-                ctx = InvocationContext(
-                    user_content=SimpleUserContent(query),
-                    session=SimpleSession("eval_session"),
-                    invocation_id=f"eval_{hash(query)}",
-                    agent=self.agent
-                )
-            except Exception as ctx_error:
-                # If that fails, try with minimal required fields
-                print(f"First attempt failed: {ctx_error}")
-                try:
-                    # Try with just the essential fields
-                    ctx = InvocationContext(
-                        user_content=SimpleUserContent(query),
-                        invocation_id=f"eval_{hash(query)}",
-                        agent=self.agent
-                    )
-                except Exception as ctx_error2:
-                    print(f"Second attempt failed: {ctx_error2}")
-                    # Last resort: try to call agent methods directly
-                    if hasattr(self.agent, 'run'):
-                        return await self.agent.run(query)
-                    elif hasattr(self.agent, 'chat'):
-                        return await self.agent.chat(query)
-                    else:
-                        raise Exception("No suitable agent method found")
+            # Create a simple session service that works with your local system
+            class LocalSessionService:
+                def __init__(self):
+                    from local_mcp.session_context_simple import get_simplified_session_context_manager
+                    self.scm = get_simplified_session_context_manager()
+                
+                async def get_session(self, session_id: str) -> Session:
+                    # Return the session we created
+                    return session
+                
+                async def update_session(self, session: Session):
+                    # Update the session in your local system
+                    if hasattr(session, 'state') and session.state:
+                        user_id = session.state.get('user_id', 'eval_user')
+                        self.scm.update_session_metadata(session.id, session.state)
+            
+            session_service = LocalSessionService()
+            
+            # Create the proper ADK InvocationContext
+            ctx = InvocationContext(
+                user_content=user_content,
+                session=session,
+                session_service=session_service,
+                invocation_id=f"eval_{hash(query)}",
+                agent=self.agent
+            )
             
             # Call the agent's _run_async_impl method
             response_events = []
