@@ -251,12 +251,14 @@ class ADKAgentEvaluationRunner:
             print(f"🔧 Tool Calls: {tool_calls}")
             
             # Run custom evaluation
+            print("🔍 Running evaluation...")
             eval_results = self.evaluator.evaluate(
                 expected_tools=expected_tools,
                 actual_tool_calls=tool_calls,
                 expected_output=expected_output,
                 actual_output=response
             )
+            print("✅ Evaluation completed")
             
             result = {
                 "query": query,
@@ -292,6 +294,7 @@ class ADKAgentEvaluationRunner:
     
     async def _extract_tool_calls(self, query: str, response: str) -> List[Dict]:
         """Extract tool calls from agent response."""
+        print(f"🔍 Extracting tool calls for query: '{query}'")
         tool_calls = []
         response_lower = response.lower()
         query_lower = query.lower()
