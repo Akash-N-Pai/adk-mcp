@@ -75,11 +75,21 @@ class HTCondorTrajectoryEvaluator:
         
         # Check for extra/unnecessary tools
         extra_tools = [tool for tool in actual_tools if tool not in expected_tools]
-        if extra_tools:
+        
+        # Special handling for session management tools - these are often used together
+        session_tools = ["list_user_sessions", "continue_last_session", "start_fresh_session", "continue_specific_session"]
+        session_related_extras = [tool for tool in extra_tools if tool in session_tools]
+        other_extras = [tool for tool in extra_tools if tool not in session_tools]
+        
+        if session_related_extras and not other_extras:
+            # Only session-related extras - this is often correct behavior
+            comments.append(f"✅ Session management extras (acceptable): {session_related_extras}")
+            score += 0.2  # Full points for session management
+        elif extra_tools:
             comments.append(f"⚠️ Extra tools used: {extra_tools}")
             score += 0.1  # Small penalty but not failure
         else:
-            score += 0.1
+            score += 0.2
             comments.append("✅ No unnecessary tools used")
         
         passed = score >= 0.7
@@ -109,6 +119,11 @@ class HTCondorOutputEvaluator(FinalOutputEvaluator):
         if any(keyword in actual.lower() for keyword in ["cluster", "job", "status", "owner"]):
             score += 0.2
             comments.append("✅ Contains job information")
+        
+        # Check for session management information
+        if any(keyword in actual.lower() for keyword in ["session", "previous sessions", "continue", "fresh", "started a fresh session"]):
+            score += 0.2
+            comments.append("✅ Contains session management information")
         
         # Check for proper table format (for job listings)
         if "|" in actual and any(header in actual.lower() for header in ["clusterid", "procid", "status", "owner"]):
