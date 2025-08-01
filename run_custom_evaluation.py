@@ -4,13 +4,11 @@ Script to run custom evaluation on HTCondor MCP agent with real agent outputs.
 
 import asyncio
 import json
-import sys
+
 from pathlib import Path
 from typing import List, Dict, Any
 
-# Add the current directory to Python path for imports
-current_dir = Path(__file__).parent
-sys.path.insert(0, str(current_dir))
+# No need to add project root since we're in the root directory
 
 # Import the custom evaluator
 from custom_evaluator import HTCondorComprehensiveEvaluator
@@ -20,9 +18,10 @@ try:
     from google.adk.evaluation.agent_evaluator import AgentEvaluator
     from local_mcp import root_agent
     ADK_AVAILABLE = True
-except ImportError:
+    print("✅ ADK and agent available - using real agent")
+except ImportError as e:
     ADK_AVAILABLE = False
-    print("Warning: ADK not available, using mock mode")
+    print(f"Warning: ADK not available ({e}), using mock mode")
 
 
 class CustomEvaluationRunner:

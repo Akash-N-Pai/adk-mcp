@@ -82,13 +82,13 @@ adk-eval-verbose:
 	adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/ --print_detailed_results
 
 adk-eval-custom:
-	@read -p "Enter config file path (default: tests/integration/test_config.json): " config; \
-	config=$${config:-tests/integration/test_config.json}; \
+	@read -p "Enter config file path (default: test_config.json): " config; \
+	config=$${config:-test_config.json}; \
 	adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/ --config_file_path=$$config --print_detailed_results
 
 # Custom Evaluation with Detailed Scoring
 custom-eval:
-	cd tests/integration && python run_custom_evaluation.py
+	python run_custom_evaluation.py
 
 # Maintenance
 clean:
