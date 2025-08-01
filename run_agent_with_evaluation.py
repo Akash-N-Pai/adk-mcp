@@ -74,12 +74,25 @@ class ADKAgentEvaluationRunner:
             # Send the query to the agent
             print(f"📤 Sending query: {query[:50]}...")
             
+            # Clear any existing output buffer first
+            print("🧹 Clearing output buffer...")
+            while True:
+                try:
+                    import select
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                    if ready:
+                        self.agent_process.stdout.readline()
+                    else:
+                        break
+                except:
+                    break
+            
             # Write query to agent's stdin with proper formatting
             self.agent_process.stdin.write(f"{query}\n")
             self.agent_process.stdin.flush()
             
             # Wait for the agent to process and respond
-            await asyncio.sleep(3.0)
+            await asyncio.sleep(5.0)
             
             # Read response from stdout with better timeout handling
             response = ""
@@ -112,6 +125,8 @@ class ADKAgentEvaluationRunner:
                                 break
                             elif "[user]:" in line:  # Agent prompt indicator
                                 print("✅ Found agent prompt, response complete")
+                                # Wait a bit more to ensure we get the full response
+                                await asyncio.sleep(1.0)
                                 break
                             elif "type exit to exit" in line:  # Agent startup message
                                 print("✅ Found agent startup message")
