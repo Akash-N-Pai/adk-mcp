@@ -4,8 +4,13 @@ Script to run custom evaluation on HTCondor MCP agent with real agent outputs.
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 from typing import List, Dict, Any
+
+# Add the current directory to Python path for imports
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
 
 # Import the custom evaluator
 from custom_evaluator import HTCondorComprehensiveEvaluator
