@@ -8,11 +8,11 @@ This directory contains the proper ADK evaluation setup for testing the HTCondor
 tests/integration/
 ├── __init__.py
 ├── README.md
-├── test_htcondor_evaluation.py          # Pytest integration tests
-├── test_config.json                     # Evaluation criteria configuration
+├── run_custom_evaluation.py          # Custom evaluation runner with detailed scoring
+├── custom_evaluator.py               # Custom evaluator for trajectory and output quality
+├── test_config.json                  # Evaluation criteria configuration
 └── fixture/
     └── htcondor_mcp_agent/
-        ├── __init__.py
         ├── basic_job_listing.test.json      # Individual test file
         ├── job_status_query.test.json       # Individual test file
         ├── job_submission.test.json         # Individual test file
@@ -52,13 +52,10 @@ make adk-eval-verbose
 make adk-eval-custom
 ```
 
-#### 3. Pytest Integration (Recommended for CI/CD)
+#### 3. Custom Evaluation (Recommended for Detailed Scoring)
 ```bash
-# Run all integration tests
-make test-integration
-
-# Run specific evaluation test
-pytest tests/integration/test_htcondor_evaluation.py::test_basic_job_listing -v
+# Run custom evaluation with trajectory and output quality scoring
+make custom-eval
 ```
 
 ## 📋 Evaluation Methods
@@ -106,6 +103,12 @@ The `.evalset.json` file contains multiple test cases in a structured format:
 }
 ```
 
+### Method 3: Custom Evaluation
+The `run_custom_evaluation.py` provides detailed scoring for:
+- **Trajectory Score**: Tool usage accuracy (60% weight)
+- **Output Score**: Response quality (40% weight)
+- **Overall Score**: Combined assessment
+
 ## 🎯 Evaluation Criteria
 
 The evaluation uses two main metrics:
@@ -131,7 +134,7 @@ Custom criteria can be set in `test_config.json`:
 - `make adk-eval` - Run CLI evaluation
 - `make adk-eval-verbose` - Run CLI evaluation with detailed results
 - `make adk-eval-custom` - Run CLI evaluation with custom config
-- `make test-integration` - Run pytest integration tests
+- `make custom-eval` - Run custom evaluation with detailed scoring
 
 ### Direct ADK Commands
 ```bash
@@ -145,6 +148,9 @@ adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/
 adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/ \
     --config_file_path=tests/integration/test_config.json \
     --print_detailed_results
+
+# Custom evaluation
+cd tests/integration && python run_custom_evaluation.py
 ```
 
 ## 📊 Test Cases
@@ -164,12 +170,17 @@ adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/ \
 ### For Individual Test Files
 1. Create a new `.test.json` file in `fixture/htcondor_mcp_agent/`
 2. Follow the session format with turns
-3. Add to `test_htcondor_evaluation.py` if needed
+3. Test with `make adk-eval`
 
 ### For Evaluation Set
 1. Add new cases to `htcondor_eval_set_001.evalset.json`
 2. Include expected tool usage and response substrings
 3. Test with `make adk-eval`
+
+### For Custom Evaluation
+1. Add new test cases to `TEST_CASES` in `run_custom_evaluation.py`
+2. Include expected tools and output guidelines
+3. Run with `make custom-eval`
 
 ## 🔍 Debugging
 
@@ -184,16 +195,16 @@ adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/ \
 make adk-eval-verbose
 
 # Check agent structure
-pytest tests/integration/test_htcondor_evaluation.py::test_agent_module_structure -v
+python -c "from local_mcp import root_agent; print('Agent available:', root_agent is not None)"
 ```
 
-### Pytest Debugging
+### Custom Evaluation Debugging
 ```bash
 # Run with verbose output
-pytest tests/integration/test_htcondor_evaluation.py -v -s
+cd tests/integration && python run_custom_evaluation.py
 
-# Run specific test
-pytest tests/integration/test_htcondor_evaluation.py::test_basic_job_listing -v
+# Check individual test cases
+python -c "from custom_evaluator import HTCondorComprehensiveEvaluator; print('Evaluator ready')"
 ```
 
 ## 📚 Resources
@@ -201,7 +212,6 @@ pytest tests/integration/test_htcondor_evaluation.py::test_basic_job_listing -v
 - [ADK Evaluation Documentation](https://google.github.io/adk-docs/evaluate/)
 - [ADK Web UI Guide](https://google.github.io/adk-docs/evaluate/#1-adk-web---run-evaluations-via-the-web-ui)
 - [ADK CLI Evaluation](https://google.github.io/adk-docs/evaluate/#3-adk-eval---run-evaluations-via-the-cli)
-- [Pytest Integration](https://google.github.io/adk-docs/evaluate/#2-pytest---run-tests-programmatically)
 
 ## 🚨 Troubleshooting
 
@@ -219,7 +229,7 @@ pytest tests/integration/test_htcondor_evaluation.py::test_basic_job_listing -v
 make install-dev
 
 # Verify agent structure
-pytest tests/integration/test_htcondor_evaluation.py::test_agent_module_structure -v
+python -c "from local_mcp import root_agent; print('Agent available:', root_agent is not None)"
 
 # Run basic evaluation
 make adk-eval
@@ -227,4 +237,4 @@ make adk-eval
 
 ---
 
-**Note**: This evaluation framework follows the official ADK standards and provides both interactive (web UI) and automated (CLI/pytest) evaluation methods for comprehensive agent testing. 
+**Note**: This evaluation framework follows the official ADK standards and provides both interactive (web UI) and automated (CLI/custom) evaluation methods for comprehensive agent testing. 

@@ -1,5 +1,5 @@
 # Makefile for ADK MCP Server project
-.PHONY: help install install-dev test test-unit test-integration test-cov lint format clean run-agent adk-eval adk-eval-verbose adk-eval-custom test-agent-integration dev-setup dev-test adk-web
+.PHONY: help install install-dev test test-unit test-integration test-cov lint format clean run-agent adk-eval adk-eval-verbose adk-eval-custom test-agent-integration dev-setup dev-test adk-web custom-eval
 
 # Default target
 help:
@@ -14,7 +14,6 @@ help:
 	@echo "  test-unit    - Run unit tests only"
 	@echo "  test-integration - Run integration tests only"
 	@echo "  test-cov     - Run tests with coverage report"
-	@echo "  test-agent-integration - Test agent integration"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  lint         - Run linting checks"
@@ -28,6 +27,7 @@ help:
 	@echo "  adk-eval     - Run ADK evaluation via CLI"
 	@echo "  adk-eval-verbose - Run ADK evaluation with detailed results"
 	@echo "  adk-eval-custom - Run ADK evaluation with custom config"
+	@echo "  custom-eval  - Run custom evaluation with detailed scoring"
 	@echo ""
 	@echo "Development:"
 	@echo "  dev-setup    - Set up development environment"
@@ -85,9 +85,9 @@ adk-eval-custom:
 	config=$${config:-tests/integration/test_config.json}; \
 	adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/ --config_file_path=$$config --print_detailed_results
 
-# Agent Integration Testing
-test-agent-integration:
-	pytest tests/integration/test_htcondor_evaluation.py -v
+# Custom Evaluation with Detailed Scoring
+custom-eval:
+	cd tests/integration && python run_custom_evaluation.py
 
 # Maintenance
 clean:

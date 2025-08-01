@@ -1,1 +1,0 @@
-# Test fixtures for HTCondor MCP agent evaluation 
