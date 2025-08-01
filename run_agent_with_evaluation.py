@@ -94,11 +94,11 @@ class ADKAgentEvaluationRunner:
             self.agent_process.stdin.flush()
             
             # Wait for the agent to process and respond
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(8.0)
             
             # Read response from stdout with better timeout handling
             response = ""
-            timeout = 15  # Reduced timeout to 15 seconds
+            timeout = 30  # Increased timeout to 30 seconds for multi-part responses
             start_time = time.time()
             
             print("⏳ Waiting for response...")
@@ -126,9 +126,35 @@ class ADKAgentEvaluationRunner:
                                 print("✅ Found response end marker")
                                 break
                             elif "[user]:" in line:  # Agent prompt indicator
-                                print("✅ Found agent prompt, response complete")
-                                # Wait a bit more to ensure we get the full response
-                                await asyncio.sleep(1.0)
+                                print("✅ Found agent prompt, waiting for complete response...")
+                                # Wait longer to ensure we get the complete multi-part response
+                                await asyncio.sleep(3.0)
+                                
+                                # Continue reading to get any additional parts
+                                additional_parts = 0
+                                while additional_parts < 5:  # Limit to prevent infinite loop
+                                    try:
+                                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.5)
+                                        if ready:
+                                            additional_line = self.agent_process.stdout.readline()
+                                            if additional_line:
+                                                response += additional_line
+                                                print(f"📝 Additional part: {additional_line.strip()}")
+                                                additional_parts += 1
+                                                
+                                                # If we find another prompt, we're done
+                                                if "[user]:" in additional_line:
+                                                    print("✅ Found final prompt, response complete")
+                                                    break
+                                            else:
+                                                break
+                                        else:
+                                            # No more data, we're done
+                                            print("✅ No more data, response complete")
+                                            break
+                                    except Exception as e:
+                                        print(f"⚠️ Error reading additional parts: {e}")
+                                        break
                                 break
                             elif "type exit to exit" in line:  # Agent startup message
                                 print("✅ Found agent startup message")
@@ -409,8 +435,8 @@ class ADKAgentEvaluationRunner:
                 result = await self.test_single_case(test_case)
                 self.results.append(result)
                 
-                # Small delay between tests
-                await asyncio.sleep(2)
+                # Longer delay between tests to allow agent to fully process
+                await asyncio.sleep(5)
             
             return self.results
             
