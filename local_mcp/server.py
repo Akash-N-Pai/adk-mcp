@@ -1910,39 +1910,82 @@ def get_user_context_summary(tool_context=None) -> dict:
 def list_htcondor_tools(tool_context=None) -> dict:
     """List all HTCondor job management tools available."""
     try:
-        # Define HTCondor-specific tools (job management only)
-        htcondor_tools = {
-            "Basic Job Management": [
-                "list_jobs - List jobs with optional filtering (owner, status, limit)",
-                "get_job_status - Get detailed status for a specific job cluster ID",
-                "submit_job - Submit a new job with submit description"
-            ],
-            "Advanced Job Information": [
-                "get_job_history - Get job execution history for a specific cluster ID"
-            ],
-            "Cluster and Pool Information": [
-                "list_pools - List all HTCondor pools",
-                "get_pool_status - Get status of the current pool",
-                "list_machines - List machines in the pool with optional status filter",
-                "get_machine_status - Get detailed status of a specific machine"
-            ],
-            "Resource Monitoring": [
-                "get_resource_usage - Get resource usage for jobs or overall system",
-                "get_queue_stats - Get queue statistics",
-                "get_system_load - Get system load information"
-            ],
-            "Reporting and Analytics": [
-                "get_utilization_stats - Get resource utilization statistics",
-                "export_job_data - Export job data in various formats (JSON, CSV)",
-                "generate_job_report - Generate comprehensive job reports"
-            ]
-        }
+        # Get the actual tools available in ADK_AF_TOOLS
+        available_tools = list(ADK_AF_TOOLS.keys())
+        
+        # Define HTCondor-specific tools based on what's actually available
+        htcondor_tools = {}
+        
+        # Basic Job Management
+        basic_job_tools = []
+        if "list_jobs" in available_tools:
+            basic_job_tools.append("list_jobs - List jobs with optional filtering (owner, status, limit)")
+        if "get_job_status" in available_tools:
+            basic_job_tools.append("get_job_status - Get detailed status for a specific job cluster ID")
+        if "submit_job" in available_tools:
+            basic_job_tools.append("submit_job - Submit a new job with submit description")
+        if basic_job_tools:
+            htcondor_tools["Basic Job Management"] = basic_job_tools
+        
+        # Advanced Job Information
+        advanced_job_tools = []
+        if "get_job_history" in available_tools:
+            advanced_job_tools.append("get_job_history - Get job execution history for a specific cluster ID")
+        if advanced_job_tools:
+            htcondor_tools["Advanced Job Information"] = advanced_job_tools
+        
+        # Reporting and Analytics
+        reporting_tools = []
+        if "generate_job_report" in available_tools:
+            reporting_tools.append("generate_job_report - Generate comprehensive job reports")
+        if "get_utilization_stats" in available_tools:
+            reporting_tools.append("get_utilization_stats - Get resource utilization statistics")
+        if "export_job_data" in available_tools:
+            reporting_tools.append("export_job_data - Export job data in various formats (JSON, CSV)")
+        if reporting_tools:
+            htcondor_tools["Reporting and Analytics"] = reporting_tools
+        
+        # Context-Aware Tools (ADK Context Integration)
+        context_tools = []
+        if "save_job_report" in available_tools:
+            context_tools.append("save_job_report - Save a job report as an artifact using ADK Context")
+        if "load_job_report" in available_tools:
+            context_tools.append("load_job_report - Load a previously saved job report using ADK Context")
+        if "search_job_memory" in available_tools:
+            context_tools.append("search_job_memory - Search memory for job-related information using ADK Context")
+        if "get_user_context_summary" in available_tools:
+            context_tools.append("get_user_context_summary - Get a comprehensive summary of the user's context and history")
+        if "add_to_memory" in available_tools:
+            context_tools.append("add_to_memory - Add information to memory using ADK Context")
+        if context_tools:
+            htcondor_tools["Context-Aware Tools (ADK Context Integration)"] = context_tools
+        
+        # Session Management (if any HTCondor-related sessions are available)
+        session_tools = []
+        if "list_user_sessions" in available_tools:
+            session_tools.append("list_user_sessions - List all your sessions")
+        if "continue_last_session" in available_tools:
+            session_tools.append("continue_last_session - Continue your most recent session")
+        if "continue_specific_session" in available_tools:
+            session_tools.append("continue_specific_session - Continue a specific session by ID")
+        if "start_fresh_session" in available_tools:
+            session_tools.append("start_fresh_session - Start a completely new session")
+        if "get_session_history" in available_tools:
+            session_tools.append("get_session_history - Get full conversation history for a session")
+        if "get_session_summary" in available_tools:
+            session_tools.append("get_session_summary - Get summary of what was done in a session")
+        if "get_user_conversation_memory" in available_tools:
+            session_tools.append("get_user_conversation_memory - Get memory across all your sessions")
+        if session_tools:
+            htcondor_tools["Session Management"] = session_tools
         
         result = {
             "success": True,
             "message": "HTCondor job management tools available",
             "total_categories": len(htcondor_tools),
-            "tools": htcondor_tools
+            "total_tools": len(available_tools),
+            "tools": htcondor_tools,
+            "available_tool_names": available_tools
         }
         
         # Get session context for logging
