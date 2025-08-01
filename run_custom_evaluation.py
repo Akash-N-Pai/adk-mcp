@@ -135,11 +135,8 @@ class CustomEvaluationRunner:
                 state={"user_id": eval_user_id}
             )
             
-            # Create proper ADK UserContent object
-            user_content = UserContent(
-                text=query,
-                timestamp=datetime.now()
-            )
+            # Create simple user content object
+            user_content = SimpleUserContent(query)
             
             # Create proper ADK BaseSessionService
             class EvalSessionService(BaseSessionService):
