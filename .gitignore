@@ -28,7 +28,6 @@ dist/
 Thumbs.db
 
 # Project-specific files
-*.json
 !evaluation/adk_evalset.json
 local_mcp/mcp_server_activity.log
 evaluation_results/

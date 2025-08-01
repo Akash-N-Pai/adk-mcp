@@ -1,0 +1,28 @@
+{
+  "sessions": [
+    {
+      "turns": [
+        {
+          "user_content": {
+            "text": "What's the status of job 1234567?"
+          },
+          "expected_tool_use": [
+            {
+              "name": "get_job_status",
+              "args": {
+                "cluster_id": 1234567
+              }
+            }
+          ],
+          "expected_intermediate_agent_responses": [],
+          "reference": "Job Status for Cluster 1234567:\n- **Status**: Running (2)\n- **Owner**: alice\n- **Command**: /home/user/script.sh\n- **Working Directory**: /home/user\n\n**Resource Usage:**\n- CPUs: 1\n- Memory: 10000 MB (9 GB)\n- Disk: 400 MB\n\n**Timing:**\n- Queue Date: 2024-01-15T14:30:22\n- Start Date: 2024-01-15T14:35:45\n\n**Files:**\n- Input: (default)\n- Output: (default)\n- Error: (default)\n- Log: (default)"
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    }
+  ]
+} 

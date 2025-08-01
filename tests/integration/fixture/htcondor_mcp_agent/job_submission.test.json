@@ -1,0 +1,31 @@
+{
+  "sessions": [
+    {
+      "turns": [
+        {
+          "user_content": {
+            "text": "Submit a job to run /bin/sleep 100"
+          },
+          "expected_tool_use": [
+            {
+              "name": "submit_job",
+              "args": {
+                "submit_description": {
+                  "executable": "/bin/sleep",
+                  "arguments": "100"
+                }
+              }
+            }
+          ],
+          "expected_intermediate_agent_responses": [],
+          "reference": "Job submitted successfully!\n\n**New Job Details:**\n- **Cluster ID**: 2345678\n- **Executable**: /bin/sleep\n- **Arguments**: 100\n- **Status**: Submitted\n\nYour job has been queued and will start when resources become available. You can check its status using the Cluster ID above."
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    }
+  ]
+} 
