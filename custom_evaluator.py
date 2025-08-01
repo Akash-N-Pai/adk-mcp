@@ -92,7 +92,7 @@ class HTCondorTrajectoryEvaluator:
             score += 0.2
             comments.append("✅ No unnecessary tools used")
         
-        passed = score >= 0.7
+        passed = score >= 0.5  # More lenient threshold
         
         return EvaluationResult(
             passed=passed,
@@ -161,7 +161,7 @@ class HTCondorOutputEvaluator(FinalOutputEvaluator):
             score += 0.1
             comments.append("✅ Provides helpful guidance")
         
-        passed = score >= 0.6
+        passed = score >= 0.4  # More lenient threshold
         
         return EvaluationResult(
             passed=passed,

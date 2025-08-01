@@ -328,9 +328,24 @@ class ADKAgentEvaluationRunner:
             "get_user_conversation_memory": ["get_user_conversation_memory", "conversation memory", "across all sessions", "user memory"]
         }
         
-        # Check for tool usage patterns in response
+        # Check for tool usage patterns in response - be more specific
         for tool_name, patterns in tool_patterns.items():
-            if any(pattern in response_lower for pattern in patterns):
+            # Only detect tools if the response actually shows tool usage, not just mentions
+            if tool_name == "list_htcondor_tools" and any(pattern in response_lower for pattern in ["basic job management", "tools organized by category", "available htcondor"]):
+                tool_calls.append({"name": tool_name, "args": {}})
+            elif tool_name == "list_jobs" and any(pattern in response_lower for pattern in ["clusterid", "procid", "status", "owner", "jobs from a total"]):
+                tool_calls.append({"name": tool_name, "args": {}})
+            elif tool_name == "get_job_status" and any(pattern in response_lower for pattern in ["cluster id:", "status:", "owner:", "job status for"]):
+                tool_calls.append({"name": tool_name, "args": {}})
+            elif tool_name == "get_job_history" and any(pattern in response_lower for pattern in ["job history for cluster", "job submitted", "job started"]):
+                tool_calls.append({"name": tool_name, "args": {}})
+            elif tool_name == "generate_job_report" and any(pattern in response_lower for pattern in ["job report for", "report metadata"]):
+                tool_calls.append({"name": tool_name, "args": {}})
+            elif tool_name == "get_utilization_stats" and any(pattern in response_lower for pattern in ["utilization statistics", "resource utilization"]):
+                tool_calls.append({"name": tool_name, "args": {}})
+            elif tool_name == "start_fresh_session" and any(pattern in response_lower for pattern in ["started a fresh session", "new session"]):
+                tool_calls.append({"name": tool_name, "args": {}})
+            elif tool_name == "list_user_sessions" and any(pattern in response_lower for pattern in ["previous sessions", "would you like to continue"]):
                 tool_calls.append({"name": tool_name, "args": {}})
         
         # Special handling for specific queries based on real conversation patterns
