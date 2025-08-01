@@ -28,10 +28,12 @@ dist/
 Thumbs.db
 
 # Project-specific files
+*.json
 !evaluation/adk_evalset.json
+!tests/integration/fixture/**/*.json
+!tests/integration/test_config.json
 local_mcp/mcp_server_activity.log
 evaluation_results/
-#*.json
 *.txt
 !requirements*.txt
 !pytest.ini
