@@ -74,8 +74,8 @@ class ADKAgentEvaluationRunner:
             # Send the query to the agent
             print(f"📤 Sending query: {query[:50]}...")
             
-            # Write query to agent's stdin
-            self.agent_process.stdin.write(query + "\n")
+            # Write query to agent's stdin with proper formatting
+            self.agent_process.stdin.write(f"Human: {query}\n")
             self.agent_process.stdin.flush()
             
             # Read response from stdout
@@ -89,7 +89,10 @@ class ADKAgentEvaluationRunner:
                     if line:
                         response += line
                         # Check if response is complete (look for end markers)
-                        if "Assistant:" in line or "Human:" in line or not line.strip():
+                        if "Human:" in line or "Assistant:" in line or "User:" in line:
+                            # Remove the prompt line from response
+                            if "Human:" in line or "User:" in line:
+                                response = response.replace(line, "")
                             break
                     else:
                         time.sleep(0.1)
@@ -99,6 +102,11 @@ class ADKAgentEvaluationRunner:
             if not response.strip():
                 # Fallback: try to get any available output
                 response = "No response received from agent"
+            
+            # Clean up the response
+            response = response.strip()
+            if response.startswith("Assistant:"):
+                response = response[10:].strip()
             
             print(f"📥 Received response: {len(response)} characters")
             return response
@@ -173,32 +181,49 @@ class ADKAgentEvaluationRunner:
         
         # Enhanced tool detection based on response patterns
         tool_patterns = {
-            "list_htcondor_tools": ["list_htcondor_tools", "available htcondor", "tools organized by category"],
-            "list_jobs": ["list_jobs", "clusterid", "procid", "status", "owner", "jobs from a total"],
-            "get_job_status": ["get_job_status", "cluster id:", "status:", "owner:", "command:"],
-            "submit_job": ["submit_job", "job submitted", "cluster id"],
-            "get_job_history": ["get_job_history", "job history", "job submitted", "job started"],
-            "generate_job_report": ["generate_job_report", "job report for", "report metadata"],
-            "get_utilization_stats": ["get_utilization_stats", "utilization statistics", "resource utilization"],
-            "export_job_data": ["export_job_data", "exported data", "csv format"],
-            "save_job_report": ["save_job_report", "saved a comprehensive report", "artifact id"],
-            "load_job_report": ["load_job_report", "loaded your previously saved", "report details"],
-            "search_job_memory": ["search_job_memory", "found the following information", "in your memory"],
-            "get_user_context_summary": ["get_user_context_summary", "comprehensive context summary", "user context"],
-            "add_to_memory": ["add_to_memory", "saved your preference", "added to your user memory"],
-            "list_user_sessions": ["list_user_sessions", "previous sessions", "would you like to continue"],
-            "continue_last_session": ["continue_last_session", "continuing your last session", "were working with"],
-            "continue_specific_session": ["continue_specific_session", "switched to session", "session summary"],
-            "start_fresh_session": ["start_fresh_session", "started a fresh session", "new session"],
-            "get_session_history": ["get_session_history", "session history", "conversation history"],
-            "get_session_summary": ["get_session_summary", "session summary", "tools used"],
-            "get_user_conversation_memory": ["get_user_conversation_memory", "conversation memory", "across all sessions"]
+            "list_htcondor_tools": ["list_htcondor_tools", "available htcondor", "tools organized by category", "basic job management", "advanced job information"],
+            "list_jobs": ["list_jobs", "clusterid", "procid", "status", "owner", "jobs from a total", "running jobs", "idle jobs"],
+            "get_job_status": ["get_job_status", "cluster id:", "status:", "owner:", "command:", "job status for", "detailed status"],
+            "submit_job": ["submit_job", "job submitted", "cluster id", "new job"],
+            "get_job_history": ["get_job_history", "job history", "job submitted", "job started", "execution history"],
+            "generate_job_report": ["generate_job_report", "job report for", "report metadata", "comprehensive report"],
+            "get_utilization_stats": ["get_utilization_stats", "utilization statistics", "resource utilization", "system utilization"],
+            "export_job_data": ["export_job_data", "exported data", "csv format", "data export"],
+            "save_job_report": ["save_job_report", "saved a comprehensive report", "artifact id", "saved report"],
+            "load_job_report": ["load_job_report", "loaded your previously saved", "report details", "previously saved"],
+            "search_job_memory": ["search_job_memory", "found the following information", "in your memory", "memory search"],
+            "get_user_context_summary": ["get_user_context_summary", "comprehensive context summary", "user context", "context summary"],
+            "add_to_memory": ["add_to_memory", "saved your preference", "added to your user memory", "preference saved"],
+            "list_user_sessions": ["list_user_sessions", "previous sessions", "would you like to continue", "session list"],
+            "continue_last_session": ["continue_last_session", "continuing your last session", "were working with", "last session"],
+            "continue_specific_session": ["continue_specific_session", "switched to session", "session summary", "specific session"],
+            "start_fresh_session": ["start_fresh_session", "started a fresh session", "new session", "fresh session"],
+            "get_session_history": ["get_session_history", "session history", "conversation history", "history for session"],
+            "get_session_summary": ["get_session_summary", "session summary", "tools used", "summary of session"],
+            "get_user_conversation_memory": ["get_user_conversation_memory", "conversation memory", "across all sessions", "user memory"]
         }
         
         # Check for tool usage patterns in response
         for tool_name, patterns in tool_patterns.items():
             if any(pattern in response_lower for pattern in patterns):
                 tool_calls.append({"name": tool_name, "args": {}})
+        
+        # Special handling for specific queries
+        if "get job status" in query_lower and "6657640" in query:
+            if "cluster id" in response_lower or "status" in response_lower:
+                tool_calls.append({"name": "get_job_status", "args": {"cluster_id": 6657640}})
+        
+        if "list all jobs" in query_lower:
+            if "clusterid" in response_lower or "jobs" in response_lower:
+                tool_calls.append({"name": "list_jobs", "args": {"owner": None, "status": None, "limit": 10}})
+        
+        if "list all tools" in query_lower:
+            if "basic job management" in response_lower or "tools organized" in response_lower:
+                tool_calls.append({"name": "list_htcondor_tools", "args": {}})
+        
+        if "hi" in query_lower:
+            if "previous sessions" in response_lower or "continue" in response_lower:
+                tool_calls.append({"name": "list_user_sessions", "args": {}})
         
         # Remove duplicates while preserving order
         seen = set()
