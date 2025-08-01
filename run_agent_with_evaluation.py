@@ -154,7 +154,6 @@ class ADKAgentEvaluationRunner:
                                     response = additional_line.strip()
                             else:
                                 response = additional_line.strip()
-                            break
                 except Exception as e:
                     print(f"🔴 Error handling interactive prompt: {e}")
                 
