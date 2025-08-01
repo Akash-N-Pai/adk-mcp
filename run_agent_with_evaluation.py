@@ -79,7 +79,7 @@ class ADKAgentEvaluationRunner:
             self.agent_process.stdin.flush()
             
             # Wait for the agent to process and respond
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(3.0)
             
             # Read response from stdout with better timeout handling
             response = ""
@@ -98,7 +98,7 @@ class ADKAgentEvaluationRunner:
                 try:
                     # Use select to check if there's data to read
                     import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
                     
                     if ready:
                         line = self.agent_process.stdout.readline()
@@ -123,12 +123,12 @@ class ADKAgentEvaluationRunner:
                                 print("✅ Found agent response line")
                                 # Continue reading to see if there's more
                     else:
-                        # No data available, wait a bit
-                        await asyncio.sleep(0.1)
+                        # No data available, wait a bit longer
+                        await asyncio.sleep(0.2)
                         
                 except Exception as read_error:
                     print(f"⚠️ Read error: {read_error}")
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.2)
             
             if not response.strip():
                 print("⚠️ No response received, using fallback")
@@ -354,7 +354,7 @@ class ADKAgentEvaluationRunner:
                 self.results.append(result)
                 
                 # Small delay between tests
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
             
             return self.results
             
