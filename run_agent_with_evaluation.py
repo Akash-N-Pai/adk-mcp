@@ -78,8 +78,8 @@ class ADKAgentEvaluationRunner:
             self.agent_process.stdin.write(f"{query}\n")
             self.agent_process.stdin.flush()
             
-            # Wait a moment for the agent to process
-            await asyncio.sleep(1.0)
+            # Wait for the agent to process and respond
+            await asyncio.sleep(2.0)
             
             # Read response from stdout with better timeout handling
             response = ""
@@ -119,6 +119,9 @@ class ADKAgentEvaluationRunner:
                             elif not line.strip():  # Empty line might indicate end
                                 print("✅ Found empty line, assuming end of response")
                                 break
+                            elif "htcondor_mcp_client_agent" in line and ":" in line:  # Agent response
+                                print("✅ Found agent response line")
+                                # Continue reading to see if there's more
                     else:
                         # No data available, wait a bit
                         await asyncio.sleep(0.1)
