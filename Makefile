@@ -1,5 +1,5 @@
 # Makefile for ADK MCP Server project
-.PHONY: help install install-dev test test-unit test-integration test-cov lint format clean run-agent run-eval eval-full eval-category eval-difficulty eval-scenario list-scenarios
+.PHONY: help install install-dev test test-unit test-integration test-cov lint format clean run-agent adk-eval adk-eval-verbose adk-eval-custom test-agent-integration dev-setup dev-test adk-web
 
 # Default target
 help:
@@ -14,6 +14,7 @@ help:
 	@echo "  test-unit    - Run unit tests only"
 	@echo "  test-integration - Run integration tests only"
 	@echo "  test-cov     - Run tests with coverage report"
+	@echo "  test-agent-integration - Test agent integration"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  lint         - Run linting checks"
@@ -21,13 +22,16 @@ help:
 	@echo ""
 	@echo "Running:"
 	@echo "  run-agent    - Start the ADK agent"
+	@echo "  adk-web      - Start ADK web UI for evaluation"
 	@echo ""
-	@echo "Evaluation:"
-	@echo "  eval-full    - Run full evaluation suite"
-	@echo "  eval-category - Run evaluation for specific category"
-	@echo "  eval-difficulty - Run evaluation for specific difficulty"
-	@echo "  eval-scenario - Run single scenario"
-	@echo "  list-scenarios - List all available scenarios"
+	@echo "ADK Evaluation:"
+	@echo "  adk-eval     - Run ADK evaluation via CLI"
+	@echo "  adk-eval-verbose - Run ADK evaluation with detailed results"
+	@echo "  adk-eval-custom - Run ADK evaluation with custom config"
+	@echo ""
+	@echo "Development:"
+	@echo "  dev-setup    - Set up development environment"
+	@echo "  dev-test     - Run format, lint, and test"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  clean        - Clean up generated files"
@@ -42,59 +46,48 @@ install-dev:
 
 # Testing
 test:
-	pytest tests/test_htcondor_mcp_comprehensive.py
+	pytest tests/
 
 test-unit:
-	pytest tests/test_htcondor_mcp_comprehensive.py -m "not integration"
+	pytest tests/ -m "not integration"
 
 test-integration:
-	pytest tests/test_htcondor_mcp_comprehensive.py -m integration
+	pytest tests/integration/
 
 test-cov:
-	pytest tests/test_htcondor_mcp_comprehensive.py --cov=local_mcp --cov=evaluation --cov-report=html --cov-report=term
+	pytest tests/ --cov=local_mcp --cov-report=html --cov-report=term
 
 # Code Quality
 lint:
-	flake8 local_mcp/ evaluation/ tests/
-	mypy local_mcp/ evaluation/
+	flake8 local_mcp/ tests/
+	mypy local_mcp/
 
 format:
-	black local_mcp/ evaluation/ tests/
+	black local_mcp/ tests/
 
 # Running
 run-agent:
 	adk web
 
-# Evaluation
-eval-full:
-	python -m evaluation.evaluation --full
+# ADK Web UI for Evaluation
+adk-web:
+	adk web local_mcp/
 
-eval-category:
-	@read -p "Enter category (job_listing, job_status, job_submission, error_handling): " category; \
-	python -m evaluation.evaluation --category $$category
-
-eval-scenario:
-	@read -p "Enter scenario name: " scenario; \
-	python -m evaluation.evaluation --scenario "$$scenario"
-
-list-scenarios:
-	python -m evaluation.evaluation --list
-
-# ADK Evaluation
+# ADK Evaluation via CLI
 adk-eval:
-	python evaluation/adk_evaluation.py
+	adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/
 
 adk-eval-verbose:
-	python evaluation/adk_evaluation.py --verbose
+	adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/ --print_detailed_results
 
 adk-eval-custom:
-	@read -p "Enter evaluation set path: " evalset; \
-	@read -p "Enter report path: " report; \
-	python evaluation/adk_evaluation.py --evalset $$evalset --report $$report
+	@read -p "Enter config file path (default: tests/integration/test_config.json): " config; \
+	config=$${config:-tests/integration/test_config.json}; \
+	adk eval local_mcp/ tests/integration/fixture/htcondor_mcp_agent/ --config_file_path=$$config --print_detailed_results
 
 # Agent Integration Testing
 test-agent-integration:
-	pytest tests/test_htcondor_mcp_comprehensive.py::TestAgentIntegration -v
+	pytest tests/integration/test_htcondor_evaluation.py -v
 
 # Maintenance
 clean:
@@ -104,7 +97,6 @@ clean:
 	rm -rf .pytest_cache/
 	rm -rf .coverage
 	rm -rf htmlcov/
-	rm -rf evaluation_results/
 	rm -rf build/
 	rm -rf dist/
 
@@ -112,11 +104,4 @@ clean:
 dev-setup: install-dev
 	pre-commit install
 
-dev-test: format lint test
-
-# Quick evaluation
-quick-eval:
-	python -m evaluation.evaluation --category job_listing
-
-# Full development cycle
-full-cycle: clean install-dev format lint test eval-full 
+dev-test: format lint test 
