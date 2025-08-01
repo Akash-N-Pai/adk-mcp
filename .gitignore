@@ -28,7 +28,6 @@ dist/
 Thumbs.db
 
 # Project-specific files
-*.json
 !evaluation/adk_evalset.json
 !tests/integration/fixture/**/*.json
 !tests/integration/test_config.json
