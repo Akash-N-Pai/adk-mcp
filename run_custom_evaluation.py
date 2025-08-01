@@ -99,10 +99,21 @@ class CustomEvaluationRunner:
             }
     
     async def _get_agent_response(self, query: str) -> str:
-        """Get response from actual agent."""
+        """Get response from actual agent and sync with our session system."""
         try:
             if self.agent is None:
                 raise Exception("Agent not available")
+            
+            # Import our session context manager
+            from local_mcp.session_context_simple import get_simplified_session_context_manager
+            scm = get_simplified_session_context_manager()
+            
+            # Create or get our own session for tracking
+            eval_user_id = "eval_user"
+            eval_session_id = scm.create_session(eval_user_id, {"evaluation": True})
+            
+            # Log the user query to our session
+            scm.add_message(eval_session_id, "user_message", query)
             
             # Import proper ADK components
             from google.adk.agents.invocation_context import InvocationContext
@@ -112,10 +123,10 @@ class CustomEvaluationRunner:
             import asyncio
             from datetime import datetime
             
-            # Create proper ADK Session object
+            # Create proper ADK Session object (let ADK handle its own session)
             session = Session(
-                id="eval_session",
-                state={"user_id": "eval_user"},
+                id=f"adk_session_{eval_session_id}",
+                state={"user_id": eval_user_id},
                 created_at=datetime.now(),
                 updated_at=datetime.now()
             )
@@ -172,12 +183,52 @@ class CustomEvaluationRunner:
                 else:
                     raise Exception("No suitable agent method found")
             
+            # Log the agent response to our session
+            scm.add_message(eval_session_id, "agent_response", response_text)
+            
+            # Update our session with any job references or context
+            self._update_session_context(scm, eval_session_id, eval_user_id, query, response_text)
+            
             return str(response_text)
             
         except Exception as e:
             print(f"Agent interaction failed: {e}")
             # Return mock response when agent fails
             return self._get_mock_response(query)[0]
+    
+    def _update_session_context(self, scm, session_id: str, user_id: str, query: str, response: str):
+        """Update our session context with information from the conversation."""
+        try:
+            # Extract job references from the conversation
+            import re
+            
+            # Look for cluster IDs in the response
+            cluster_ids = re.findall(r'\b\d{7}\b', response)  # 7-digit cluster IDs
+            if cluster_ids:
+                scm.add_to_memory(user_id, "recent_jobs", cluster_ids)
+            
+            # Look for job status information
+            if any(status in response.lower() for status in ["running", "idle", "held", "completed"]):
+                scm.add_to_memory(user_id, "last_query_type", "job_status")
+            
+            # Look for tool usage patterns
+            tool_patterns = {
+                "list_jobs": "job_listing",
+                "get_job_status": "job_status_check",
+                "get_job_history": "job_history",
+                "list_htcondor_tools": "tool_discovery"
+            }
+            
+            for tool_name, query_type in tool_patterns.items():
+                if tool_name in response.lower():
+                    scm.add_to_memory(user_id, "last_query_type", query_type)
+                    break
+            
+            # Update session activity
+            scm.update_session_activity(session_id)
+            
+        except Exception as e:
+            print(f"Warning: Failed to update session context: {e}")
     
     async def _extract_tool_calls(self, query: str, response: str) -> List[Dict]:
         """Extract tool calls from agent response."""
@@ -405,6 +456,9 @@ class CustomEvaluationRunner:
         avg_output = sum(r.get('output_score', 0) for r in self.results) / total_cases
         avg_overall = sum(r.get('overall_score', 0) for r in self.results) / total_cases
         
+        # Show session information
+        self._show_session_summary()
+        
         report = {
             "summary": {
                 "total_cases": total_cases,
@@ -431,6 +485,37 @@ class CustomEvaluationRunner:
         print(f"Avg Output Score: {avg_output:.3f}")
         print(f"Avg Overall Score: {avg_overall:.3f}")
         print(f"Report saved to: {output_file}")
+    
+    def _show_session_summary(self):
+        """Show summary of our session tracking."""
+        try:
+            from local_mcp.session_context_simple import get_simplified_session_context_manager
+            scm = get_simplified_session_context_manager()
+            
+            # Get evaluation sessions
+            eval_user_id = "eval_user"
+            user_memory = scm.get_user_memory(eval_user_id)
+            
+            if user_memory:
+                print(f"\n📝 SESSION TRACKING SUMMARY")
+                print(f"User: {eval_user_id}")
+                print(f"Memory entries: {len(user_memory)}")
+                
+                # Show recent jobs if any
+                if "recent_jobs" in user_memory:
+                    print(f"Recent jobs referenced: {user_memory['recent_jobs']}")
+                
+                # Show last query type if any
+                if "last_query_type" in user_memory:
+                    print(f"Last query type: {user_memory['last_query_type']}")
+                
+                # Show session history
+                sessions = scm.get_conversation_history("eval_session")
+                if sessions:
+                    print(f"Session conversations: {len(sessions)}")
+                    
+        except Exception as e:
+            print(f"Warning: Could not show session summary: {e}")
 
 
 # Test cases based on typical conversation flow
