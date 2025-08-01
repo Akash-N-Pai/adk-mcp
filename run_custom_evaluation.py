@@ -104,20 +104,30 @@ class CustomEvaluationRunner:
             if self.agent is None:
                 raise Exception("Agent not available")
             
-            # Import ADK components for proper agent interaction
+            # Import ADK components for proper agent interaction (ADK 1.9.0)
             from google.adk.agents.invocation_context import InvocationContext
             from google.adk.events import Event
             import asyncio
             
-            # Create a simple invocation context
-            class SimpleInvocationContext:
-                def __init__(self, query: str):
-                    self.user_content = type('obj', (object,), {'text': query})()
-                    self.invocation_id = f"eval_{hash(query)}"
-                    self.session = type('obj', (object,), {'id': 'eval_session', 'state': {}})()
+            # Create a simple session object
+            class SimpleSession:
+                def __init__(self, session_id: str):
+                    self.id = session_id
+                    self.state = {}
             
-            # Create invocation context
-            ctx = SimpleInvocationContext(query)
+            # Create a simple user content object
+            class SimpleUserContent:
+                def __init__(self, text: str):
+                    self.text = text
+                    self.timestamp = None
+            
+            # Create the actual ADK-compatible context
+            ctx = InvocationContext(
+                user_content=SimpleUserContent(query),
+                session=SimpleSession("eval_session"),
+                invocation_id=f"eval_{hash(query)}",
+                agent=self.agent
+            )
             
             # Call the agent's _run_async_impl method
             response_events = []
