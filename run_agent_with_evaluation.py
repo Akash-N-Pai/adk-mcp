@@ -78,10 +78,8 @@ class ADKAgentEvaluationRunner:
             self.agent_process.stdin.write(f"{query}\n")
             self.agent_process.stdin.flush()
             
-            # Send a newline to trigger the agent's response
-            await asyncio.sleep(0.5)  # Give agent time to process
-            self.agent_process.stdin.write("\n")
-            self.agent_process.stdin.flush()
+            # Wait a moment for the agent to process
+            await asyncio.sleep(1.0)
             
             # Read response from stdout with better timeout handling
             response = ""
@@ -115,6 +113,9 @@ class ADKAgentEvaluationRunner:
                             elif "[user]:" in line:  # Agent prompt indicator
                                 print("✅ Found agent prompt, response complete")
                                 break
+                            elif "type exit to exit" in line:  # Agent startup message
+                                print("✅ Found agent startup message")
+                                continue  # Continue reading for actual response
                             elif not line.strip():  # Empty line might indicate end
                                 print("✅ Found empty line, assuming end of response")
                                 break
@@ -156,7 +157,14 @@ class ADKAgentEvaluationRunner:
                     'log setup complete', 'to access latest log', 'running agent', 
                     'type exit to exit', 'tail -f'
                 ]):
-                    cleaned_lines.append(line)
+                    # Clean up the agent response format
+                    if '[htcondor_mcp_client_agent]:' in line:
+                        # Extract just the agent's response part
+                        parts = line.split('[htcondor_mcp_client_agent]:')
+                        if len(parts) > 1:
+                            cleaned_lines.append(parts[1].strip())
+                    else:
+                        cleaned_lines.append(line)
             
             response = '\n'.join(cleaned_lines).strip()
             
