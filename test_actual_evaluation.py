@@ -5,6 +5,7 @@ Test script to run a single evaluation case and see what's happening.
 
 import sys
 import os
+import time
 
 # Add the current directory to the path so we can import the evaluation script
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -24,14 +25,26 @@ def test_single_evaluation():
         print("🚀 Starting agent...")
         runner.start_agent()
         
+        # Wait a bit for agent to fully initialize
+        print("⏳ Waiting for agent to fully initialize...")
+        time.sleep(10)
+        
         # Initialize the agent properly
         print("\n👋 Step 1: Greeting the agent...")
-        greeting_response = runner.send_query_and_wait("hi", wait_time=8)
-        print(f"📄 Greeting response: {greeting_response[:200]}...")
+        try:
+            greeting_response = runner.send_query_and_wait("hi", wait_time=8)
+            print(f"📄 Greeting response: {greeting_response[:200]}...")
+        except Exception as e:
+            print(f"⚠️ Greeting failed: {e}")
+            greeting_response = "Greeting failed"
         
         print("\n🆕 Step 2: Creating a new session...")
-        session_response = runner.send_query_and_wait("create a new session", wait_time=8)
-        print(f"📄 Session response: {session_response[:200]}...")
+        try:
+            session_response = runner.send_query_and_wait("create a new session", wait_time=8)
+            print(f"📄 Session response: {session_response[:200]}...")
+        except Exception as e:
+            print(f"⚠️ Session creation failed: {e}")
+            session_response = "Session creation failed"
         
         # Test case 3: List All Jobs
         test_case = {

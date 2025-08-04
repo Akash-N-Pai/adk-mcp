@@ -78,7 +78,9 @@ class SimpleADKEvaluator:
             
             # Clear any existing output by reading until no more data
             print("🧹 Clearing existing output...")
-            while True:
+            clear_attempts = 0
+            max_clear_attempts = 50  # Limit buffer clearing to prevent infinite loops
+            while clear_attempts < max_clear_attempts:
                 try:
                     import select
                     ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
@@ -86,8 +88,12 @@ class SimpleADKEvaluator:
                         line = self.agent_process.stdout.readline()
                         if not line:
                             break
+                        clear_attempts += 1
+                    else:
+                        break
                 except:
                     break
+            print(f"🧹 Cleared {clear_attempts} lines of existing output")
             
             # Send the query
             self.agent_process.stdin.write(f"{query}\n")
