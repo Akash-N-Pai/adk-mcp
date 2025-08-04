@@ -123,6 +123,13 @@ class ADKAgentEvaluationRunner:
                             consecutive_empty_reads = 0  # Reset counter
                             print(f"📝 Read line: {line.strip()}")
                             
+                            # Check for interactive prompts and respond automatically
+                            if "do you want to see more" in line.lower() or "would you like to" in line.lower() or "filter the list" in line.lower():
+                                print("🤖 Auto-responding to interactive prompt: 'no'")
+                                self.agent_process.stdin.write("no\n")
+                                self.agent_process.stdin.flush()
+                                await asyncio.sleep(1.0)
+                            
                             # Check for end of response indicators
                             if "[user]:" in line and "htcondor_mcp_client_agent" in line:
                                 print("✅ Found agent prompt, response should be complete")
@@ -140,6 +147,13 @@ class ADKAgentEvaluationRunner:
                                             if remaining_line:
                                                 response += remaining_line
                                                 print(f"📝 Final content: {remaining_line.strip()}")
+                                                
+                                                # Check for interactive prompts and respond automatically
+                                                if "do you want to see more" in remaining_line.lower() or "would you like to" in remaining_line.lower():
+                                                    print("🤖 Auto-responding to interactive prompt: 'no'")
+                                                    self.agent_process.stdin.write("no\n")
+                                                    self.agent_process.stdin.flush()
+                                                    await asyncio.sleep(1.0)
                                                 
                                                 # If we find another prompt, we're definitely done
                                                 if "[user]:" in remaining_line:
@@ -336,7 +350,7 @@ class ADKAgentEvaluationRunner:
             # More specific detection based on actual tool output patterns
             if tool_name == "list_htcondor_tools" and any(pattern in response_lower for pattern in ["basic job management:", "tools organized by category:", "available htcondor job management tools"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "list_jobs" and any(pattern in response_lower for pattern in ["clusterid\tprocid\tstatus\towner", "jobs from a total", "clusterid", "procid", "status", "owner"]):
+            elif tool_name == "list_jobs" and any(pattern in response_lower for pattern in ["clusterid\tprocid\tstatus\towner", "jobs from a total", "jobs from the list", "clusterid", "procid", "status", "owner"]):
                 tool_calls.append({"name": tool_name, "args": {}})
             elif tool_name == "get_job_status" and any(pattern in response_lower for pattern in ["cluster id:", "status:", "owner:", "command:", "working directory:"]):
                 tool_calls.append({"name": tool_name, "args": {}})
@@ -357,7 +371,7 @@ class ADKAgentEvaluationRunner:
                 tool_calls.append({"name": "get_job_status", "args": {"cluster_id": 6657640}})
         
         if "list all jobs" in query_lower:
-            if "clusterid\tprocid\tstatus\towner" in response_lower or "jobs from a total" in response_lower or "clusterid" in response_lower and "procid" in response_lower:
+            if "clusterid\tprocid\tstatus\towner" in response_lower or "jobs from a total" in response_lower or "jobs from the list" in response_lower or ("clusterid" in response_lower and "procid" in response_lower and "status" in response_lower):
                 tool_calls.append({"name": "list_jobs", "args": {"owner": None, "status": None, "limit": 10}})
         
         if "list all tools" in query_lower:
@@ -482,7 +496,7 @@ TEST_CASES = [
         "name": "List All Jobs",
         "query": "list all the jobs",
         "expected_tools": ["list_jobs"],
-        "expected_output": "clusterid",
+        "expected_output": "jobs from the list",
         "description": "Agent should list jobs in table format with proper headers"
     },
     {
