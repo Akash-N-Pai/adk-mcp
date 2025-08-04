@@ -99,72 +99,79 @@ class SimpleADKEvaluator:
             print(f"⏳ Waiting {wait_time} seconds for response...")
             time.sleep(wait_time)
             
-                        # Read ALL available output - keep reading until truly nothing more
+            # Read all available output with improved multi-part response handling
             response_lines = []
-            consecutive_empty_reads = 0
-            max_consecutive_empty = 50  # Much higher threshold
-            total_reads = 0
-            max_total_reads = 1000  # Very high limit
+            max_read_attempts = 300  # Higher limit for complete responses
+            read_attempts = 0
+            last_data_time = time.time()
+            no_data_count = 0
+            max_no_data_count = 20  # Allow more no-data periods
             
-            print("📖 Reading ALL response data...")
+            print("📖 Reading response data...")
             
-            while total_reads < max_total_reads:
+            while read_attempts < max_read_attempts:
                 try:
                     import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
                     if ready:
                         line = self.agent_process.stdout.readline()
                         if line:
                             response_lines.append(line.strip())
-                            print(f"📝 [{total_reads:03d}] {line.strip()}")
-                            consecutive_empty_reads = 0  # Reset counter when we get data
-                        else:
-                            consecutive_empty_reads += 1
-                            print(f"⏳ [{total_reads:03d}] Empty line ({consecutive_empty_reads})")
+                            print(f"📝 {line.strip()}")
+                            read_attempts = 0  # Reset counter when we get data
+                            no_data_count = 0  # Reset no-data counter
+                            last_data_time = time.time()
+                                            else:
+                            no_data_count += 1
                     else:
-                        consecutive_empty_reads += 1
-                        print(f"⏳ [{total_reads:03d}] No data ({consecutive_empty_reads})")
-                        time.sleep(0.1)
-                    
-                    # Only stop if we've had MANY consecutive empty reads
-                    if consecutive_empty_reads >= max_consecutive_empty:
-                        print(f"✅ Stopping after {consecutive_empty_reads} consecutive empty reads")
-                        break
-                    
-                    total_reads += 1
+                        no_data_count += 1
+                        current_time = time.time()
+                        
+                        # If we haven't received data for a while, check if we have a complete response
+                        if current_time - last_data_time > 2.0:  # 2 seconds without data
+                            print("⏰ No data for 2 seconds, checking response completeness...")
+                            
+                            # Check if we have a complete response based on content
+                            response_so_far = '\n'.join(response_lines).lower()
+                            
+                            if "list all the jobs" in query.lower():
+                                # Check for complete job listing with table and summary
+                                if ("clusterid" in response_so_far and "procid" in response_so_far and 
+                                    "status" in response_so_far and "owner" in response_so_far and
+                                    "there are a total of" in response_so_far):
+                                    print("✅ Job listing appears complete with table and summary")
+                                    break
+                                elif no_data_count >= max_no_data_count:
+                                    print("⚠️ Stopping job listing read - max no-data count reached")
+                                    break
+                            
+                            elif "list all the tools" in query.lower():
+                                # Check for complete tool listing with categories
+                                if ("basic job management" in response_so_far and 
+                                    "session management" in response_so_far):
+                                    print("✅ Tool listing appears complete with all categories")
+                                    break
+                                elif no_data_count >= max_no_data_count:
+                                    print("⚠️ Stopping tool listing read - max no-data count reached")
+                                    break
+                            
+                        else:
+                                # For other queries, if we have substantial content, consider it complete
+                                if len(response_so_far) > 50:
+                                    print("✅ Response appears complete with substantial content")
+                                    break
+                                elif no_data_count >= max_no_data_count:
+                                    print("⚠️ Stopping read - max no-data count reached")
+                                    break
+                        
+                        if no_data_count >= max_no_data_count:
+                            print("✅ No data available after maximum attempts")
+                            break
+                        time.sleep(0.2)
+                    read_attempts += 1
                 except Exception as e:
                     print(f"⚠️ Error reading response: {e}")
-                    consecutive_empty_reads += 1
-                    total_reads += 1
-            
-            print(f"📊 Total lines read: {len(response_lines)}")
-            print(f"📊 Total read attempts: {total_reads}")
-            print(f"📊 Consecutive empty reads: {consecutive_empty_reads}")
-            
-            # Handle any interactive prompts that might have appeared
-            response_text = '\n'.join(response_lines)
-            response_lower = response_text.lower()
-            if "how many jobs do you want to list" in response_lower or "need to know the limit" in response_lower:
-                print("🤖 Detected job limit prompt, auto-responding with '10'")
-                self.agent_process.stdin.write("10\n")
-                self.agent_process.stdin.flush()
-                time.sleep(2)
-                # Read additional response after auto-response
-                additional_lines = []
-                for _ in range(50):  # Read up to 50 more lines
-                    try:
-                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
-                        if ready:
-                            line = self.agent_process.stdout.readline()
-                            if line:
-                                additional_lines.append(line.strip())
-                                print(f"📝 Additional: {line.strip()}")
-                        else:
-                            break
-                    except:
-                        break
-                response_lines.extend(additional_lines)
-                print(f"📊 Additional lines read: {len(additional_lines)}")
+                    read_attempts += 1
             
             # Process the response
             response = '\n'.join(response_lines)
@@ -546,15 +553,15 @@ TEST_CASES = [
         "description": "Agent should greet user and check for existing sessions"
     },
     {
-        "name": "Start Fresh Session",
-        "query": "start fresh",
+        "name": "Create New Session",
+        "query": "create a new session",
         "expected_tools": ["start_fresh_session"],
         "expected_output": "started",
-        "description": "Agent should start a fresh session"
+        "description": "Agent should create a new session when requested"
     },
     {
         "name": "List All Jobs",
-        "query": "list all jobs",
+        "query": "list all the jobs",
         "expected_tools": ["list_jobs"],
         "expected_output": "clusterid",
         "description": "Agent should list jobs in table format"
