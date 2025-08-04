@@ -99,17 +99,20 @@ class SimpleADKEvaluator:
             print(f"⏳ Waiting {wait_time} seconds for response...")
             time.sleep(wait_time)
             
-            # Read all available output with better handling
+            # Read all available output with better handling for multi-part responses
             response_lines = []
-            max_read_attempts = 100  # Increased limit for longer responses
+            max_read_attempts = 200  # Much higher limit for complete responses
             read_attempts = 0
             consecutive_empty_reads = 0
-            max_empty_reads = 10  # Allow more empty reads before stopping
+            max_empty_reads = 15  # Allow more empty reads before stopping
+            last_data_time = time.time()
+            
+            print("📖 Reading response data...")
             
             while read_attempts < max_read_attempts:
                 try:
                     import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.3)
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.5)
                     if ready:
                         line = self.agent_process.stdout.readline()
                         if line:
@@ -117,6 +120,7 @@ class SimpleADKEvaluator:
                             print(f"📝 {line.strip()}")
                             read_attempts = 0  # Reset counter when we get data
                             consecutive_empty_reads = 0  # Reset empty read counter
+                            last_data_time = time.time()
                         else:
                             consecutive_empty_reads += 1
                             if consecutive_empty_reads >= max_empty_reads:
@@ -124,12 +128,35 @@ class SimpleADKEvaluator:
                                 break
                     else:
                         consecutive_empty_reads += 1
+                        current_time = time.time()
+                        
+                        # If we haven't received data for a while, check if we have a complete response
+                        if current_time - last_data_time > 3.0:  # 3 seconds without data
+                            print("⏰ No data for 3 seconds, checking if response is complete...")
+                            
+                            # Check if we have a complete response based on content
+                            response_so_far = '\n'.join(response_lines).lower()
+                            if "list all the jobs" in query.lower():
+                                if "clusterid" in response_so_far and "procid" in response_so_far and "there are a total of" in response_so_far:
+                                    print("✅ Job listing appears complete with table and summary")
+                                    break
+                            elif "list all the tools" in query.lower():
+                                if "basic job management" in response_so_far and "session management" in response_so_far:
+                                    print("✅ Tool listing appears complete with all categories")
+                                    break
+                            else:
+                                # For other queries, if we have substantial content, consider it complete
+                                if len(response_so_far) > 100:
+                                    print("✅ Response appears complete with substantial content")
+                                    break
+                        
                         if consecutive_empty_reads >= max_empty_reads:
                             print("✅ No data available after multiple attempts")
                             break
-                        time.sleep(0.2)
+                        time.sleep(0.3)
                     read_attempts += 1
-                except:
+                except Exception as e:
+                    print(f"⚠️ Error reading response: {e}")
                     read_attempts += 1
             
             # Process the response
@@ -233,7 +260,7 @@ class SimpleADKEvaluator:
         missing_patterns = []
         
         if "list all the jobs" in query_lower:
-            expected_patterns = ["clusterid", "procid", "status", "owner"]
+            expected_patterns = ["clusterid", "procid", "status", "owner", "there are a total of"]
             for pattern in expected_patterns:
                 if pattern not in response_lower:
                     missing_patterns.append(pattern)
@@ -241,7 +268,7 @@ class SimpleADKEvaluator:
             if missing_patterns:
                 return {
                     "complete": False,
-                    "reason": "Job listing missing table data",
+                    "reason": "Job listing missing table data or summary",
                     "missing_patterns": missing_patterns
                 }
         
