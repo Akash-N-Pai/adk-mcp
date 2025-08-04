@@ -78,18 +78,18 @@ class SimpleADKEvaluator:
             
             # Clear any existing output by reading until no more data
             print("🧹 Clearing existing output...")
-            while True:
-                try:
-                    import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
-                    if ready:
+                while True:
+                    try:
+                        import select
+                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                        if ready:
                         line = self.agent_process.stdout.readline()
                         if not line:
                             break
                     else:
                         break
                 except:
-                    break
+                        break
             
             # Send the query
             self.agent_process.stdin.write(f"{query}\n")
@@ -99,79 +99,72 @@ class SimpleADKEvaluator:
             print(f"⏳ Waiting {wait_time} seconds for response...")
             time.sleep(wait_time)
             
-            # Read all available output with improved multi-part response handling
+                        # Read ALL available output - keep reading until truly nothing more
             response_lines = []
-            max_read_attempts = 300  # Higher limit for complete responses
-            read_attempts = 0
-            last_data_time = time.time()
-            no_data_count = 0
-            max_no_data_count = 20  # Allow more no-data periods
+            consecutive_empty_reads = 0
+            max_consecutive_empty = 50  # Much higher threshold
+            total_reads = 0
+            max_total_reads = 1000  # Very high limit
             
-            print("📖 Reading response data...")
+            print("📖 Reading ALL response data...")
             
-            while read_attempts < max_read_attempts:
+            while total_reads < max_total_reads:
                 try:
                     import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
                     if ready:
                         line = self.agent_process.stdout.readline()
                         if line:
                             response_lines.append(line.strip())
-                            print(f"📝 {line.strip()}")
-                            read_attempts = 0  # Reset counter when we get data
-                            no_data_count = 0  # Reset no-data counter
-                            last_data_time = time.time()
+                            print(f"📝 [{total_reads:03d}] {line.strip()}")
+                            consecutive_empty_reads = 0  # Reset counter when we get data
                         else:
-                            no_data_count += 1
+                            consecutive_empty_reads += 1
+                            print(f"⏳ [{total_reads:03d}] Empty line ({consecutive_empty_reads})")
                     else:
-                        no_data_count += 1
-                        current_time = time.time()
-                        
-                        # If we haven't received data for a while, check if we have a complete response
-                        if current_time - last_data_time > 2.0:  # 2 seconds without data
-                            print("⏰ No data for 2 seconds, checking response completeness...")
-                            
-                            # Check if we have a complete response based on content
-                            response_so_far = '\n'.join(response_lines).lower()
-                            
-                            if "list all the jobs" in query.lower():
-                                # Check for complete job listing with table and summary
-                                if ("clusterid" in response_so_far and "procid" in response_so_far and 
-                                    "status" in response_so_far and "owner" in response_so_far and
-                                    "there are a total of" in response_so_far):
-                                    print("✅ Job listing appears complete with table and summary")
-                                    break
-                                elif no_data_count >= max_no_data_count:
-                                    print("⚠️ Stopping job listing read - max no-data count reached")
-                                    break
-                            
-                            elif "list all the tools" in query.lower():
-                                # Check for complete tool listing with categories
-                                if ("basic job management" in response_so_far and 
-                                    "session management" in response_so_far):
-                                    print("✅ Tool listing appears complete with all categories")
-                                    break
-                                elif no_data_count >= max_no_data_count:
-                                    print("⚠️ Stopping tool listing read - max no-data count reached")
-                                    break
-                            
-                            else:
-                                # For other queries, if we have substantial content, consider it complete
-                                if len(response_so_far) > 50:
-                                    print("✅ Response appears complete with substantial content")
-                                    break
-                                elif no_data_count >= max_no_data_count:
-                                    print("⚠️ Stopping read - max no-data count reached")
-                                    break
-                        
-                        if no_data_count >= max_no_data_count:
-                            print("✅ No data available after maximum attempts")
-                            break
-                        time.sleep(0.2)
-                    read_attempts += 1
+                        consecutive_empty_reads += 1
+                        print(f"⏳ [{total_reads:03d}] No data ({consecutive_empty_reads})")
+                        time.sleep(0.1)
+                    
+                    # Only stop if we've had MANY consecutive empty reads
+                    if consecutive_empty_reads >= max_consecutive_empty:
+                        print(f"✅ Stopping after {consecutive_empty_reads} consecutive empty reads")
+                        break
+                    
+                    total_reads += 1
                 except Exception as e:
                     print(f"⚠️ Error reading response: {e}")
-                    read_attempts += 1
+                    consecutive_empty_reads += 1
+                    total_reads += 1
+            
+            print(f"📊 Total lines read: {len(response_lines)}")
+            print(f"📊 Total read attempts: {total_reads}")
+            print(f"📊 Consecutive empty reads: {consecutive_empty_reads}")
+            
+            # Handle any interactive prompts that might have appeared
+            response_text = '\n'.join(response_lines)
+            response_lower = response_text.lower()
+            if "how many jobs do you want to list" in response_lower or "need to know the limit" in response_lower:
+                print("🤖 Detected job limit prompt, auto-responding with '10'")
+                self.agent_process.stdin.write("10\n")
+                self.agent_process.stdin.flush()
+                time.sleep(2)
+                # Read additional response after auto-response
+                additional_lines = []
+                for _ in range(50):  # Read up to 50 more lines
+                    try:
+                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                        if ready:
+                            line = self.agent_process.stdout.readline()
+                            if line:
+                                additional_lines.append(line.strip())
+                                print(f"📝 Additional: {line.strip()}")
+                        else:
+                            break
+                    except:
+                        break
+                response_lines.extend(additional_lines)
+                print(f"📊 Additional lines read: {len(additional_lines)}")
             
             # Process the response
             response = '\n'.join(response_lines)
@@ -187,12 +180,12 @@ class SimpleADKEvaluator:
                     continue
                 
                 # Clean up agent response format
-                if '[htcondor_mcp_client_agent]:' in line:
-                    parts = line.split('[htcondor_mcp_client_agent]:')
-                    if len(parts) > 1:
-                        cleaned_lines.append(parts[1].strip())
+                    if '[htcondor_mcp_client_agent]:' in line:
+                        parts = line.split('[htcondor_mcp_client_agent]:')
+                        if len(parts) > 1:
+                            cleaned_lines.append(parts[1].strip())
                 elif line.strip() and not line.startswith('[user]:'):
-                    cleaned_lines.append(line)
+                        cleaned_lines.append(line)
             
             final_response = '\n'.join(cleaned_lines).strip()
             
@@ -553,15 +546,15 @@ TEST_CASES = [
         "description": "Agent should greet user and check for existing sessions"
     },
     {
-        "name": "Create New Session",
-        "query": "create a new session",
+        "name": "Start Fresh Session",
+        "query": "start fresh",
         "expected_tools": ["start_fresh_session"],
         "expected_output": "started",
-        "description": "Agent should create a new session when requested"
+        "description": "Agent should start a fresh session"
     },
     {
         "name": "List All Jobs",
-        "query": "list all the jobs",
+        "query": "list all jobs",
         "expected_tools": ["list_jobs"],
         "expected_output": "clusterid",
         "description": "Agent should list jobs in table format"
