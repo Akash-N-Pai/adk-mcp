@@ -81,10 +81,10 @@ class SimpleADKEvaluator:
             clear_attempts = 0
             max_clear_attempts = 50  # Limit buffer clearing to prevent infinite loops
             while clear_attempts < max_clear_attempts:
-                try:
-                    import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
-                    if ready:
+                    try:
+                        import select
+                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                        if ready:
                         line = self.agent_process.stdout.readline()
                         if not line:
                             break
@@ -125,7 +125,7 @@ class SimpleADKEvaluator:
                             read_attempts = 0  # Reset counter when we get data
                             no_data_count = 0  # Reset no-data counter
                             last_data_time = time.time()
-                        else:
+                                            else:
                             no_data_count += 1
                     else:
                         no_data_count += 1
@@ -166,7 +166,7 @@ class SimpleADKEvaluator:
                                 break
                             elif no_data_count >= max_no_data_count:
                                 print("⚠️ Stopping read - max no-data count reached")
-                                break
+                            break
                     
                     if no_data_count >= max_no_data_count:
                         print("✅ No data available after maximum attempts")
@@ -176,7 +176,7 @@ class SimpleADKEvaluator:
                 except Exception as e:
                     print(f"⚠️ Error reading response: {e}")
                     read_attempts += 1
-            
+                
             # Process the response
             response = '\n'.join(response_lines)
             
@@ -191,12 +191,12 @@ class SimpleADKEvaluator:
                     continue
                 
                 # Clean up agent response format
-                if '[htcondor_mcp_client_agent]:' in line:
-                    parts = line.split('[htcondor_mcp_client_agent]:')
-                    if len(parts) > 1:
-                        cleaned_lines.append(parts[1].strip())
+                    if '[htcondor_mcp_client_agent]:' in line:
+                        parts = line.split('[htcondor_mcp_client_agent]:')
+                        if len(parts) > 1:
+                            cleaned_lines.append(parts[1].strip())
                 elif line.strip() and not line.startswith('[user]:'):
-                    cleaned_lines.append(line)
+                        cleaned_lines.append(line)
             
             final_response = '\n'.join(cleaned_lines).strip()
             
