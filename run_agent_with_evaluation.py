@@ -78,18 +78,16 @@ class SimpleADKEvaluator:
             
             # Clear any existing output by reading until no more data
             print("🧹 Clearing existing output...")
-                while True:
-                    try:
-                        import select
-                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
-                        if ready:
+            while True:
+                try:
+                    import select
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                    if ready:
                         line = self.agent_process.stdout.readline()
                         if not line:
                             break
-                    else:
-                        break
                 except:
-                        break
+                    break
             
             # Send the query
             self.agent_process.stdin.write(f"{query}\n")
@@ -121,7 +119,7 @@ class SimpleADKEvaluator:
                             read_attempts = 0  # Reset counter when we get data
                             no_data_count = 0  # Reset no-data counter
                             last_data_time = time.time()
-                                            else:
+                        else:
                             no_data_count += 1
                     else:
                         no_data_count += 1
@@ -156,18 +154,18 @@ class SimpleADKEvaluator:
                                     break
                             
                         else:
-                                # For other queries, if we have substantial content, consider it complete
-                                if len(response_so_far) > 50:
-                                    print("✅ Response appears complete with substantial content")
-                                    break
-                                elif no_data_count >= max_no_data_count:
-                                    print("⚠️ Stopping read - max no-data count reached")
-                                    break
-                        
-                        if no_data_count >= max_no_data_count:
-                            print("✅ No data available after maximum attempts")
-                            break
-                        time.sleep(0.2)
+                            # For other queries, if we have substantial content, consider it complete
+                            if len(response_so_far) > 50:
+                                print("✅ Response appears complete with substantial content")
+                                break
+                            elif no_data_count >= max_no_data_count:
+                                print("⚠️ Stopping read - max no-data count reached")
+                                break
+                    
+                    if no_data_count >= max_no_data_count:
+                        print("✅ No data available after maximum attempts")
+                        break
+                    time.sleep(0.2)
                     read_attempts += 1
                 except Exception as e:
                     print(f"⚠️ Error reading response: {e}")
@@ -187,12 +185,12 @@ class SimpleADKEvaluator:
                     continue
                 
                 # Clean up agent response format
-                    if '[htcondor_mcp_client_agent]:' in line:
-                        parts = line.split('[htcondor_mcp_client_agent]:')
-                        if len(parts) > 1:
-                            cleaned_lines.append(parts[1].strip())
+                if '[htcondor_mcp_client_agent]:' in line:
+                    parts = line.split('[htcondor_mcp_client_agent]:')
+                    if len(parts) > 1:
+                        cleaned_lines.append(parts[1].strip())
                 elif line.strip() and not line.startswith('[user]:'):
-                        cleaned_lines.append(line)
+                    cleaned_lines.append(line)
             
             final_response = '\n'.join(cleaned_lines).strip()
             
