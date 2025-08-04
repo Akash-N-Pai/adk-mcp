@@ -99,61 +99,75 @@ class SimpleADKEvaluator:
             print(f"⏳ Waiting {wait_time} seconds for response...")
             time.sleep(wait_time)
             
-            # Read all available output with better handling for multi-part responses
+            # Read all available output with improved multi-part response handling
             response_lines = []
-            max_read_attempts = 200  # Much higher limit for complete responses
+            max_read_attempts = 300  # Higher limit for complete responses
             read_attempts = 0
-            consecutive_empty_reads = 0
-            max_empty_reads = 15  # Allow more empty reads before stopping
             last_data_time = time.time()
+            no_data_count = 0
+            max_no_data_count = 20  # Allow more no-data periods
             
             print("📖 Reading response data...")
             
             while read_attempts < max_read_attempts:
                 try:
                     import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.5)
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
                     if ready:
                         line = self.agent_process.stdout.readline()
                         if line:
                             response_lines.append(line.strip())
                             print(f"📝 {line.strip()}")
                             read_attempts = 0  # Reset counter when we get data
-                            consecutive_empty_reads = 0  # Reset empty read counter
+                            no_data_count = 0  # Reset no-data counter
                             last_data_time = time.time()
                         else:
-                            consecutive_empty_reads += 1
-                            if consecutive_empty_reads >= max_empty_reads:
-                                print("✅ No more data after multiple empty reads")
-                                break
+                            no_data_count += 1
                     else:
-                        consecutive_empty_reads += 1
+                        no_data_count += 1
                         current_time = time.time()
                         
                         # If we haven't received data for a while, check if we have a complete response
-                        if current_time - last_data_time > 3.0:  # 3 seconds without data
-                            print("⏰ No data for 3 seconds, checking if response is complete...")
+                        if current_time - last_data_time > 2.0:  # 2 seconds without data
+                            print("⏰ No data for 2 seconds, checking response completeness...")
                             
                             # Check if we have a complete response based on content
                             response_so_far = '\n'.join(response_lines).lower()
+                            
                             if "list all the jobs" in query.lower():
-                                if "clusterid" in response_so_far and "procid" in response_so_far and "there are a total of" in response_so_far:
+                                # Check for complete job listing with table and summary
+                                if ("clusterid" in response_so_far and "procid" in response_so_far and 
+                                    "status" in response_so_far and "owner" in response_so_far and
+                                    "there are a total of" in response_so_far):
                                     print("✅ Job listing appears complete with table and summary")
                                     break
+                                elif no_data_count >= max_no_data_count:
+                                    print("⚠️ Stopping job listing read - max no-data count reached")
+                                    break
+                            
                             elif "list all the tools" in query.lower():
-                                if "basic job management" in response_so_far and "session management" in response_so_far:
+                                # Check for complete tool listing with categories
+                                if ("basic job management" in response_so_far and 
+                                    "session management" in response_so_far):
                                     print("✅ Tool listing appears complete with all categories")
                                     break
+                                elif no_data_count >= max_no_data_count:
+                                    print("⚠️ Stopping tool listing read - max no-data count reached")
+                                    break
+                            
                             else:
                                 # For other queries, if we have substantial content, consider it complete
-                                if len(response_so_far) > 100:
+                                if len(response_so_far) > 50:
                                     print("✅ Response appears complete with substantial content")
                                     break
+                                elif no_data_count >= max_no_data_count:
+                                    print("⚠️ Stopping read - max no-data count reached")
+                                    break
                         
-                        if consecutive_empty_reads >= max_empty_reads:
-                            print("✅ No data available after multiple attempts")
+                        if no_data_count >= max_no_data_count:
+                            print("✅ No data available after maximum attempts")
                             break
-                        time.sleep(0.3)
+                        time.sleep(0.2)
                     read_attempts += 1
                 except Exception as e:
                     print(f"⚠️ Error reading response: {e}")
@@ -386,11 +400,11 @@ class SimpleADKEvaluator:
         try:
             # Get agent response with appropriate wait time
             if "list all the jobs" in query.lower():
-                wait_time = 40  # Much longer wait for job listing
+                wait_time = 10  # Shorter wait, focus on proper reading
             elif "list all the tools" in query.lower():
-                wait_time = 35  # Longer wait for tool listing
+                wait_time = 10  # Shorter wait, focus on proper reading
             else:
-                wait_time = 25  # Standard wait for other operations
+                wait_time = 8  # Standard wait for other operations
             response = self.send_query_and_wait(query, wait_time)
             
             print(f"🤖 Agent Response: {response[:100]}...")
