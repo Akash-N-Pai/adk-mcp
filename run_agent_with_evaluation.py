@@ -99,23 +99,28 @@ class SimpleADKEvaluator:
             print(f"⏳ Waiting {wait_time} seconds for response...")
             time.sleep(wait_time)
             
-            # Read all available output
+            # Read all available output with better handling
             response_lines = []
-            while True:
+            max_read_attempts = 50  # Limit to prevent infinite loops
+            read_attempts = 0
+            
+            while read_attempts < max_read_attempts:
                 try:
                     import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
                     if ready:
                         line = self.agent_process.stdout.readline()
                         if line:
                             response_lines.append(line.strip())
                             print(f"📝 {line.strip()}")
+                            read_attempts = 0  # Reset counter when we get data
                         else:
-                            break
+                            read_attempts += 1
                     else:
-                        break
+                        read_attempts += 1
+                        time.sleep(0.1)
                 except:
-                    break
+                    read_attempts += 1
             
             # Process the response
             response = '\n'.join(response_lines)
@@ -142,6 +147,20 @@ class SimpleADKEvaluator:
             
             print(f"📥 Response length: {len(final_response)} characters")
             print(f"📄 Response preview: {final_response[:200]}...")
+            
+            # Validate response completeness
+            query_lower = query.lower()
+            response_lower = final_response.lower()
+            
+            if "list all the jobs" in query_lower:
+                if "clusterid" not in response_lower or "procid" not in response_lower:
+                    print("⚠️ WARNING: Job listing response missing table data - response may be incomplete")
+            elif "list all the tools" in query_lower:
+                if "basic job management" not in response_lower and "tools organized" not in response_lower:
+                    print("⚠️ WARNING: Tool listing response missing tool categories - response may be incomplete")
+            elif "get job status" in query_lower:
+                if "cluster id" not in response_lower and "status:" not in response_lower:
+                    print("⚠️ WARNING: Job status response missing status info - response may be incomplete")
             
             return final_response
             
@@ -202,6 +221,46 @@ class SimpleADKEvaluator:
         
         return tool_calls
     
+    def validate_response_quality(self, query: str, response: str) -> Dict[str, Any]:
+        """Validate that the response is appropriate for the query type."""
+        query_lower = query.lower()
+        response_lower = response.lower()
+        
+        # Check for empty or very short responses
+        if len(response.strip()) < 10:
+            return {"is_valid": False, "reason": "Response too short"}
+        
+        # Check for error responses
+        if "error" in response_lower or "failed" in response_lower:
+            return {"is_valid": False, "reason": "Response contains error"}
+        
+        # Query-specific validation
+        if "list all the jobs" in query_lower:
+            if "clusterid" not in response_lower or "procid" not in response_lower:
+                return {"is_valid": False, "reason": "Job listing missing table data"}
+        
+        elif "list all the tools" in query_lower:
+            if "basic job management" not in response_lower and "tools organized" not in response_lower:
+                return {"is_valid": False, "reason": "Tool listing missing tool categories"}
+        
+        elif "get job status" in query_lower:
+            if "cluster id" not in response_lower and "status:" not in response_lower:
+                return {"is_valid": False, "reason": "Job status missing status information"}
+        
+        elif "get job history" in query_lower:
+            if "job history" not in response_lower and "queue date" not in response_lower:
+                return {"is_valid": False, "reason": "Job history missing history information"}
+        
+        elif "generate job report" in query_lower:
+            if "job report" not in response_lower and "report metadata" not in response_lower:
+                return {"is_valid": False, "reason": "Job report missing report information"}
+        
+        elif "get_utilization_stats" in query_lower:
+            if "utilization" not in response_lower and "statistics" not in response_lower:
+                return {"is_valid": False, "reason": "Utilization stats missing statistics"}
+        
+        return {"is_valid": True, "reason": "Response validation passed"}
+    
     def test_single_case(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
         """Test a single case with the running agent."""
         query = test_case["query"]
@@ -212,10 +271,28 @@ class SimpleADKEvaluator:
         
         try:
             # Get agent response with appropriate wait time
-            wait_time = 20 if "list" in query.lower() else 15  # Longer wait for list operations
+            wait_time = 25 if "list" in query.lower() else 20  # Longer wait for all operations
             response = self.send_query_and_wait(query, wait_time)
             
             print(f"🤖 Agent Response: {response[:100]}...")
+            
+            # Validate response quality before evaluation
+            response_quality = self.validate_response_quality(query, response)
+            if not response_quality["is_valid"]:
+                print(f"❌ Response validation failed: {response_quality['reason']}")
+                return {
+                    "query": query,
+                    "expected_tools": expected_tools,
+                    "actual_tool_calls": [],
+                    "expected_output": expected_output,
+                    "actual_output": response,
+                    "trajectory_score": 0.0,
+                    "trajectory_comment": f"Response validation failed: {response_quality['reason']}",
+                    "output_score": 0.0,
+                    "output_comment": f"Response validation failed: {response_quality['reason']}",
+                    "overall_score": 0.0,
+                    "overall_passed": False
+                }
             
             # Extract tool calls
             tool_calls = self.extract_tool_calls(query, response)

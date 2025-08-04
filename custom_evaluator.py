@@ -233,7 +233,7 @@ class HTCondorTrajectoryEvaluator:
             score += 0.2
             comments.append("✅ No unnecessary tools used")
         
-        passed = score >= 0.5  # More lenient threshold
+        passed = score >= 0.7  # Stricter threshold
         
         return EvaluationResult(
             passed=passed,
@@ -304,7 +304,7 @@ class HTCondorOutputEvaluator(FinalOutputEvaluator):
         else:
             comments.append("⚠️ Response too verbose")
         
-        passed = score >= 0.4  # More lenient threshold
+        passed = score >= 0.6  # Stricter threshold
         
         return EvaluationResult(
             passed=passed,
@@ -475,8 +475,8 @@ class HTCondorComprehensiveEvaluator:
         # Calculate overall score with context-aware weighting
         overall_score = (trajectory_result.score * 0.6) + (output_result.score * 0.4)
         
-        # More flexible passing criteria
-        overall_passed = (trajectory_result.score >= 0.4 and output_result.score >= 0.3) or overall_score >= 0.6
+        # Stricter passing criteria
+        overall_passed = (trajectory_result.score >= 0.6 and output_result.score >= 0.5) and overall_score >= 0.7
         
         return {
             "trajectory": trajectory_result,
