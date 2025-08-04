@@ -101,24 +101,34 @@ class SimpleADKEvaluator:
             
             # Read all available output with better handling
             response_lines = []
-            max_read_attempts = 50  # Limit to prevent infinite loops
+            max_read_attempts = 100  # Increased limit for longer responses
             read_attempts = 0
+            consecutive_empty_reads = 0
+            max_empty_reads = 10  # Allow more empty reads before stopping
             
             while read_attempts < max_read_attempts:
                 try:
                     import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.3)
                     if ready:
                         line = self.agent_process.stdout.readline()
                         if line:
                             response_lines.append(line.strip())
                             print(f"📝 {line.strip()}")
                             read_attempts = 0  # Reset counter when we get data
+                            consecutive_empty_reads = 0  # Reset empty read counter
                         else:
-                            read_attempts += 1
+                            consecutive_empty_reads += 1
+                            if consecutive_empty_reads >= max_empty_reads:
+                                print("✅ No more data after multiple empty reads")
+                                break
                     else:
-                        read_attempts += 1
-                        time.sleep(0.1)
+                        consecutive_empty_reads += 1
+                        if consecutive_empty_reads >= max_empty_reads:
+                            print("✅ No data available after multiple attempts")
+                            break
+                        time.sleep(0.2)
+                    read_attempts += 1
                 except:
                     read_attempts += 1
             
@@ -152,15 +162,12 @@ class SimpleADKEvaluator:
             query_lower = query.lower()
             response_lower = final_response.lower()
             
-            if "list all the jobs" in query_lower:
-                if "clusterid" not in response_lower or "procid" not in response_lower:
-                    print("⚠️ WARNING: Job listing response missing table data - response may be incomplete")
-            elif "list all the tools" in query_lower:
-                if "basic job management" not in response_lower and "tools organized" not in response_lower:
-                    print("⚠️ WARNING: Tool listing response missing tool categories - response may be incomplete")
-            elif "get job status" in query_lower:
-                if "cluster id" not in response_lower and "status:" not in response_lower:
-                    print("⚠️ WARNING: Job status response missing status info - response may be incomplete")
+            # Check if response appears complete based on query type
+            is_complete = self.check_response_completeness(query_lower, response_lower)
+            if not is_complete["complete"]:
+                print(f"⚠️ WARNING: Response may be incomplete: {is_complete['reason']}")
+                print(f"📊 Response length: {len(final_response)} characters")
+                print(f"📊 Expected patterns missing: {is_complete['missing_patterns']}")
             
             return final_response
             
@@ -221,6 +228,86 @@ class SimpleADKEvaluator:
         
         return tool_calls
     
+    def check_response_completeness(self, query_lower: str, response_lower: str) -> Dict[str, Any]:
+        """Check if the response appears complete based on query type."""
+        missing_patterns = []
+        
+        if "list all the jobs" in query_lower:
+            expected_patterns = ["clusterid", "procid", "status", "owner"]
+            for pattern in expected_patterns:
+                if pattern not in response_lower:
+                    missing_patterns.append(pattern)
+            
+            if missing_patterns:
+                return {
+                    "complete": False,
+                    "reason": "Job listing missing table data",
+                    "missing_patterns": missing_patterns
+                }
+        
+        elif "list all the tools" in query_lower:
+            expected_patterns = ["basic job management", "tools organized", "available htcondor"]
+            found_patterns = [p for p in expected_patterns if p in response_lower]
+            
+            if not found_patterns:
+                return {
+                    "complete": False,
+                    "reason": "Tool listing missing tool categories",
+                    "missing_patterns": expected_patterns
+                }
+        
+        elif "get job status" in query_lower:
+            expected_patterns = ["cluster id", "status:", "owner:", "command:"]
+            for pattern in expected_patterns:
+                if pattern not in response_lower:
+                    missing_patterns.append(pattern)
+            
+            if len(missing_patterns) >= 2:  # Allow some flexibility
+                return {
+                    "complete": False,
+                    "reason": "Job status missing key information",
+                    "missing_patterns": missing_patterns
+                }
+        
+        elif "get job history" in query_lower:
+            expected_patterns = ["job history", "queue date", "job start date", "submitted", "started"]
+            found_patterns = [p for p in expected_patterns if p in response_lower]
+            
+            if not found_patterns:
+                return {
+                    "complete": False,
+                    "reason": "Job history missing history information",
+                    "missing_patterns": expected_patterns
+                }
+        
+        elif "generate job report" in query_lower:
+            expected_patterns = ["job report", "report metadata", "total jobs", "status distribution"]
+            found_patterns = [p for p in expected_patterns if p in response_lower]
+            
+            if not found_patterns:
+                return {
+                    "complete": False,
+                    "reason": "Job report missing report information",
+                    "missing_patterns": expected_patterns
+                }
+        
+        elif "get_utilization_stats" in query_lower:
+            expected_patterns = ["utilization", "statistics", "total jobs", "completed jobs"]
+            found_patterns = [p for p in expected_patterns if p in response_lower]
+            
+            if not found_patterns:
+                return {
+                    "complete": False,
+                    "reason": "Utilization stats missing statistics",
+                    "missing_patterns": expected_patterns
+                }
+        
+        return {
+            "complete": True,
+            "reason": "Response appears complete",
+            "missing_patterns": []
+        }
+    
     def validate_response_quality(self, query: str, response: str) -> Dict[str, Any]:
         """Validate that the response is appropriate for the query type."""
         query_lower = query.lower()
@@ -271,7 +358,12 @@ class SimpleADKEvaluator:
         
         try:
             # Get agent response with appropriate wait time
-            wait_time = 25 if "list" in query.lower() else 20  # Longer wait for all operations
+            if "list all the jobs" in query.lower():
+                wait_time = 40  # Much longer wait for job listing
+            elif "list all the tools" in query.lower():
+                wait_time = 35  # Longer wait for tool listing
+            else:
+                wait_time = 25  # Standard wait for other operations
             response = self.send_query_and_wait(query, wait_time)
             
             print(f"🤖 Agent Response: {response[:100]}...")
