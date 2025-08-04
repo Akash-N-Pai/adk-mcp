@@ -65,6 +65,23 @@ class ADKAgentEvaluationRunner:
                 self.agent_process.kill()
             print("✅ Agent stopped")
     
+    async def wait_for_agent_ready(self):
+        """Wait for agent to be ready for next input."""
+        print("⏳ Waiting for agent to be ready...")
+        await asyncio.sleep(3.0)
+        
+        # Clear any remaining output
+        while True:
+            try:
+                import select
+                ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                if ready:
+                    self.agent_process.stdout.readline()
+                else:
+                    break
+            except:
+                break
+    
     async def send_query_to_agent(self, query: str) -> str:
         """Send a query to the running agent and get response."""
         try:
@@ -75,18 +92,17 @@ class ADKAgentEvaluationRunner:
             print(f"📤 Sending query: {query[:50]}...")
             
             # Clear any existing output buffer before sending new query
-            if hasattr(self, '_first_query_sent'):
-                print("🧹 Clearing output buffer...")
-                while True:
-                    try:
-                        import select
-                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
-                        if ready:
-                            self.agent_process.stdout.readline()
-                        else:
-                            break
-                    except:
+            print("🧹 Clearing output buffer...")
+            while True:
+                try:
+                    import select
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                    if ready:
+                        self.agent_process.stdout.readline()
+                    else:
                         break
+                except:
+                    break
             
             # Write query to agent's stdin with proper formatting
             self.agent_process.stdin.write(f"{query}\n")
@@ -132,39 +148,42 @@ class ADKAgentEvaluationRunner:
                             
                             # Check for end of response indicators
                             if "[user]:" in line and "htcondor_mcp_client_agent" in line:
-                                print("✅ Found agent prompt, response should be complete")
-                                # Wait a bit more to ensure we get any final content
-                                await asyncio.sleep(2.0)
+                                print("✅ Found agent prompt, continuing to read full response...")
+                                # Continue reading to get the complete response
+                                await asyncio.sleep(1.0)
                                 
-                                # Read any remaining content
-                                remaining_timeout = 10
-                                remaining_start = time.time()
-                                while time.time() - remaining_start < remaining_timeout:
+                                # Read the complete response content
+                                complete_response_timeout = 15
+                                complete_start = time.time()
+                                while time.time() - complete_start < complete_response_timeout:
                                     try:
-                                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
+                                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.3)
                                         if ready:
-                                            remaining_line = self.agent_process.stdout.readline()
-                                            if remaining_line:
-                                                response += remaining_line
-                                                print(f"📝 Final content: {remaining_line.strip()}")
+                                            complete_line = self.agent_process.stdout.readline()
+                                            if complete_line:
+                                                response += complete_line
+                                                print(f"📝 Complete response: {complete_line.strip()}")
                                                 
                                                 # Check for interactive prompts and respond automatically
-                                                if "do you want to see more" in remaining_line.lower() or "would you like to" in remaining_line.lower():
+                                                if "do you want to see more" in complete_line.lower() or "would you like to" in complete_line.lower() or "filter the list" in complete_line.lower():
                                                     print("🤖 Auto-responding to interactive prompt: 'no'")
                                                     self.agent_process.stdin.write("no\n")
                                                     self.agent_process.stdin.flush()
                                                     await asyncio.sleep(1.0)
                                                 
-                                                # If we find another prompt, we're definitely done
-                                                if "[user]:" in remaining_line:
+                                                # If we find another prompt, we're done
+                                                if "[user]:" in complete_line and "htcondor_mcp_client_agent" in complete_line:
                                                     print("✅ Found final prompt, response complete")
                                                     break
                                             else:
+                                                # No more data, we're done
+                                                print("✅ No more data, response complete")
                                                 break
                                         else:
-                                            break
+                                            # No data available, wait a bit more
+                                            await asyncio.sleep(0.5)
                                     except Exception as e:
-                                        print(f"⚠️ Error reading remaining content: {e}")
+                                        print(f"⚠️ Error reading complete response: {e}")
                                         break
                                 break
                             elif "type exit to exit" in line:  # Agent startup message
@@ -350,7 +369,7 @@ class ADKAgentEvaluationRunner:
             # More specific detection based on actual tool output patterns
             if tool_name == "list_htcondor_tools" and any(pattern in response_lower for pattern in ["basic job management:", "tools organized by category:", "available htcondor job management tools"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "list_jobs" and any(pattern in response_lower for pattern in ["clusterid\tprocid\tstatus\towner", "jobs from a total", "jobs from the list", "clusterid", "procid", "status", "owner"]):
+            elif tool_name == "list_jobs" and any(pattern in response_lower for pattern in ["clusterid\tprocid\tstatus\towner", "jobs from a total", "jobs from the list", "here are the first", "there are a total of", "clusterid", "procid", "status", "owner"]):
                 tool_calls.append({"name": tool_name, "args": {}})
             elif tool_name == "get_job_status" and any(pattern in response_lower for pattern in ["cluster id:", "status:", "owner:", "command:", "working directory:"]):
                 tool_calls.append({"name": tool_name, "args": {}})
@@ -371,7 +390,12 @@ class ADKAgentEvaluationRunner:
                 tool_calls.append({"name": "get_job_status", "args": {"cluster_id": 6657640}})
         
         if "list all jobs" in query_lower:
-            if "clusterid\tprocid\tstatus\towner" in response_lower or "jobs from a total" in response_lower or "jobs from the list" in response_lower or ("clusterid" in response_lower and "procid" in response_lower and "status" in response_lower):
+            if ("clusterid\tprocid\tstatus\towner" in response_lower or 
+                "jobs from a total" in response_lower or 
+                "jobs from the list" in response_lower or 
+                "here are the first" in response_lower or
+                "there are a total of" in response_lower or
+                ("clusterid" in response_lower and "procid" in response_lower and "status" in response_lower)):
                 tool_calls.append({"name": "list_jobs", "args": {"owner": None, "status": None, "limit": 10}})
         
         if "list all tools" in query_lower:
@@ -426,8 +450,9 @@ class ADKAgentEvaluationRunner:
                 result = await self.test_single_case(test_case)
                 self.results.append(result)
                 
-                # Longer delay between tests to allow agent to fully process
-                await asyncio.sleep(8)
+                # Wait for agent to be ready for next test case
+                if i < len(test_cases):  # Don't wait after the last test case
+                    await self.wait_for_agent_ready()
             
             return self.results
             
