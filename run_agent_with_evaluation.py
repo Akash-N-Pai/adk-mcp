@@ -68,19 +68,31 @@ class ADKAgentEvaluationRunner:
     async def wait_for_agent_ready(self):
         """Wait for agent to be ready for next input."""
         print("⏳ Waiting for agent to be ready...")
-        await asyncio.sleep(3.0)
+        await asyncio.sleep(5.0)  # Longer wait
         
-        # Clear any remaining output
-        while True:
+        # Clear any remaining output more thoroughly
+        clear_attempts = 0
+        max_clear_attempts = 30
+        
+        while clear_attempts < max_clear_attempts:
             try:
                 import select
                 ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
                 if ready:
-                    self.agent_process.stdout.readline()
+                    line = self.agent_process.stdout.readline()
+                    if line:
+                        print(f"🧹 Clearing remaining: {line.strip()}")
+                        clear_attempts += 1
+                    else:
+                        break
                 else:
-                    break
+                    # No more data, wait a bit more to be sure
+                    await asyncio.sleep(0.5)
+                    clear_attempts += 1
             except:
                 break
+        
+        print("✅ Agent ready for next query")
     
     async def send_query_to_agent(self, query: str) -> str:
         """Send a query to the running agent and get response."""
@@ -93,16 +105,32 @@ class ADKAgentEvaluationRunner:
             
             # Clear any existing output buffer before sending new query
             print("🧹 Clearing output buffer...")
-            while True:
+            buffer_cleared = False
+            clear_attempts = 0
+            max_clear_attempts = 20  # Limit buffer clearing attempts
+            
+            while not buffer_cleared and clear_attempts < max_clear_attempts:
                 try:
                     import select
                     ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
                     if ready:
-                        self.agent_process.stdout.readline()
+                        line = self.agent_process.stdout.readline()
+                        if line:
+                            print(f"🧹 Cleared: {line.strip()}")
+                            clear_attempts += 1
+                        else:
+                            buffer_cleared = True
                     else:
-                        break
+                        # No more data to clear
+                        buffer_cleared = True
                 except:
-                    break
+                    buffer_cleared = True
+            
+            if clear_attempts >= max_clear_attempts:
+                print("⚠️ Buffer clearing limit reached, proceeding anyway")
+            
+            # Wait a moment after clearing to ensure agent is ready
+            await asyncio.sleep(1.0)
             
             # Write query to agent's stdin with proper formatting
             self.agent_process.stdin.write(f"{query}\n")
@@ -182,10 +210,27 @@ class ADKAgentEvaluationRunner:
                                         print(f"⚠️ Error reading additional content: {e}")
                                         break
                                 
-                                # If we have substantial content, consider response complete
-                                if len(response.strip()) > 50:
-                                    print("✅ Response appears complete with substantial content")
-                                    break
+                                # Check for specific completion patterns based on query type
+                                query_lower = query.lower()
+                                response_lower = response.lower()
+                                
+                                if "list all the jobs" in query_lower:
+                                    if "clusterid" in response_lower and "procid" in response_lower and "status" in response_lower:
+                                        print("✅ Job listing response appears complete")
+                                        break
+                                elif "list all the tools" in query_lower:
+                                    if "basic job management" in response_lower or "tools organized" in response_lower:
+                                        print("✅ Tool listing response appears complete")
+                                        break
+                                elif "get job status" in query_lower:
+                                    if "cluster id" in response_lower and "status:" in response_lower:
+                                        print("✅ Job status response appears complete")
+                                        break
+                                else:
+                                    # For other queries, use length-based completion
+                                    if len(response.strip()) > 50:
+                                        print("✅ Response appears complete with substantial content")
+                                        break
                         else:
                             # No data available, check if we've been inactive too long
                             if time.time() - last_activity_time > 5.0:
@@ -243,6 +288,21 @@ class ADKAgentEvaluationRunner:
             
             print(f"📥 Received response: {len(response)} characters")
             print(f"📄 Full response preview: {response[:200]}...")
+            
+            # Validate response type based on query
+            response_lower = response.lower()
+            query_lower = query.lower()
+            
+            if "list all the jobs" in query_lower:
+                if "clusterid" not in response_lower or "procid" not in response_lower:
+                    print("⚠️ Warning: Job listing response missing expected table data")
+            elif "list all the tools" in query_lower:
+                if "basic job management" not in response_lower and "tools organized" not in response_lower:
+                    print("⚠️ Warning: Tool listing response missing expected tool categories")
+            elif "get job status" in query_lower:
+                if "cluster id" not in response_lower and "status:" not in response_lower:
+                    print("⚠️ Warning: Job status response missing expected status information")
+            
             return response
             
         except Exception as e:
