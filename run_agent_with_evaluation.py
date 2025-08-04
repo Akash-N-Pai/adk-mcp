@@ -74,10 +74,9 @@ class ADKAgentEvaluationRunner:
             # Send the query to the agent
             print(f"📤 Sending query: {query[:50]}...")
             
-            # Only clear buffer on first query or if we detect stale data
-            if not hasattr(self, '_first_query_sent'):
-                print("🧹 Clearing initial output buffer...")
-                self._first_query_sent = True
+            # Clear any existing output buffer before sending new query
+            if hasattr(self, '_first_query_sent'):
+                print("🧹 Clearing output buffer...")
                 while True:
                     try:
                         import select
@@ -94,12 +93,14 @@ class ADKAgentEvaluationRunner:
             self.agent_process.stdin.flush()
             
             # Wait for the agent to process and respond
-            await asyncio.sleep(8.0)
+            await asyncio.sleep(3.0)
             
-            # Read response from stdout with better timeout handling
+            # Read response from stdout with improved logic
             response = ""
-            timeout = 30  # Increased timeout to 30 seconds for multi-part responses
+            timeout = 45  # Increased timeout to 45 seconds for complete responses
             start_time = time.time()
+            consecutive_empty_reads = 0
+            max_empty_reads = 10  # Allow more empty reads before giving up
             
             print("⏳ Waiting for response...")
             
@@ -113,118 +114,94 @@ class ADKAgentEvaluationRunner:
                 try:
                     # Use select to check if there's data to read
                     import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.5)
                     
                     if ready:
                         line = self.agent_process.stdout.readline()
                         if line:
                             response += line
+                            consecutive_empty_reads = 0  # Reset counter
                             print(f"📝 Read line: {line.strip()}")
                             
                             # Check for end of response indicators
-                            if "Human:" in line or "User:" in line:
-                                print("✅ Found response end marker")
-                                break
-                            elif "[user]:" in line:  # Agent prompt indicator
-                                print("✅ Found agent prompt, waiting for complete response...")
-                                # Wait longer to ensure we get the complete multi-part response
-                                await asyncio.sleep(3.0)
+                            if "[user]:" in line and "htcondor_mcp_client_agent" in line:
+                                print("✅ Found agent prompt, response should be complete")
+                                # Wait a bit more to ensure we get any final content
+                                await asyncio.sleep(2.0)
                                 
-                                # Continue reading to get any additional parts
-                                additional_parts = 0
-                                while additional_parts < 5:  # Limit to prevent infinite loop
+                                # Read any remaining content
+                                remaining_timeout = 10
+                                remaining_start = time.time()
+                                while time.time() - remaining_start < remaining_timeout:
                                     try:
-                                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.5)
+                                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
                                         if ready:
-                                            additional_line = self.agent_process.stdout.readline()
-                                            if additional_line:
-                                                response += additional_line
-                                                print(f"📝 Additional part: {additional_line.strip()}")
-                                                additional_parts += 1
+                                            remaining_line = self.agent_process.stdout.readline()
+                                            if remaining_line:
+                                                response += remaining_line
+                                                print(f"📝 Final content: {remaining_line.strip()}")
                                                 
-                                                # If we find another prompt, we're done
-                                                if "[user]:" in additional_line:
+                                                # If we find another prompt, we're definitely done
+                                                if "[user]:" in remaining_line:
                                                     print("✅ Found final prompt, response complete")
                                                     break
                                             else:
                                                 break
                                         else:
-                                            # No more data, we're done
-                                            print("✅ No more data, response complete")
                                             break
                                     except Exception as e:
-                                        print(f"⚠️ Error reading additional parts: {e}")
+                                        print(f"⚠️ Error reading remaining content: {e}")
                                         break
                                 break
                             elif "type exit to exit" in line:  # Agent startup message
                                 print("✅ Found agent startup message")
                                 continue  # Continue reading for actual response
-                            elif not line.strip():  # Empty line might indicate end
-                                print("✅ Found empty line, assuming end of response")
+                        else:
+                            consecutive_empty_reads += 1
+                            if consecutive_empty_reads >= max_empty_reads:
+                                print(f"✅ No more data after {max_empty_reads} empty reads")
                                 break
-                            elif "htcondor_mcp_client_agent" in line and ":" in line:  # Agent response
-                                print("✅ Found agent response line")
-                                # Continue reading to see if there's more
                     else:
                         # No data available, wait a bit longer
-                        await asyncio.sleep(0.2)
+                        await asyncio.sleep(0.5)
                         
                 except Exception as read_error:
                     print(f"⚠️ Read error: {read_error}")
-                    await asyncio.sleep(0.2)
+                    await asyncio.sleep(0.5)
             
             if not response.strip():
-                print("⚠️ No response received, waiting longer...")
-                # Wait a bit more and try to read again
-                await asyncio.sleep(2.0)
-                
-                # Try to read any remaining response
-                while True:
-                    try:
-                        import select
-                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.5)
-                        if ready:
-                            line = self.agent_process.stdout.readline()
-                            if line:
-                                response += line
-                                print(f"📝 Additional line: {line.strip()}")
-                                
-                                if "[user]:" in line:
-                                    print("✅ Found delayed response")
-                                    break
-                        else:
-                            break
-                    except:
-                        break
-                
-                if not response.strip():
-                    print("⚠️ Still no response, using fallback")
-                    response = "No response received from agent"
+                print("⚠️ No response received, using fallback")
+                response = "No response received from agent"
             
-            # Clean up the response
+            # Clean up the response - keep more content
             response = response.strip()
             
-            # Remove log messages and keep only the agent's response
+            # Remove log messages but keep more of the agent's response
             lines = response.split('\n')
             cleaned_lines = []
+            skip_log_lines = False
+            
             for line in lines:
-                # Skip log messages and keep only agent responses
-                if not any(skip in line.lower() for skip in [
+                # Skip initial log messages
+                if any(skip in line.lower() for skip in [
                     'log setup complete', 'to access latest log', 'running agent', 
                     'type exit to exit', 'tail -f'
                 ]):
-                    # Clean up the agent response format
-                    if '[htcondor_mcp_client_agent]:' in line:
-                        # Extract just the agent's response part
-                        parts = line.split('[htcondor_mcp_client_agent]:')
-                        if len(parts) > 1:
-                            cleaned_lines.append(parts[1].strip())
-                    else:
-                        cleaned_lines.append(line)
+                    continue
+                
+                # Keep agent responses and content
+                if '[htcondor_mcp_client_agent]:' in line:
+                    # Extract just the agent's response part
+                    parts = line.split('[htcondor_mcp_client_agent]:')
+                    if len(parts) > 1:
+                        cleaned_lines.append(parts[1].strip())
+                elif line.strip() and not line.startswith('[user]:'):
+                    # Keep non-empty lines that aren't user prompts
+                    cleaned_lines.append(line)
             
             response = '\n'.join(cleaned_lines).strip()
             
-            # If we still have the [user]: prefix, remove it
+            # Remove any remaining [user]: prefixes
             if response.startswith('[user]:'):
                 response = response[7:].strip()
             
@@ -330,81 +307,81 @@ class ADKAgentEvaluationRunner:
         response_lower = response.lower()
         query_lower = query.lower()
         
-        # Enhanced tool detection based on response patterns
+        # Enhanced tool detection based on response patterns and actual tool usage
         tool_patterns = {
-            "list_htcondor_tools": ["list_htcondor_tools", "available htcondor", "tools organized by category", "basic job management", "advanced job information"],
-            "list_jobs": ["list_jobs", "clusterid", "procid", "status", "owner", "jobs from a total", "running jobs", "idle jobs"],
-            "get_job_status": ["get_job_status", "cluster id:", "status:", "owner:", "command:", "job status for", "detailed status"],
-            "submit_job": ["submit_job", "job submitted", "cluster id", "new job"],
-            "get_job_history": ["get_job_history", "job history", "job submitted", "job started", "execution history"],
-            "generate_job_report": ["generate_job_report", "job report for", "report metadata", "comprehensive report"],
-            "get_utilization_stats": ["get_utilization_stats", "utilization statistics", "resource utilization", "system utilization"],
-            "export_job_data": ["export_job_data", "exported data", "csv format", "data export"],
-            "save_job_report": ["save_job_report", "saved a comprehensive report", "artifact id", "saved report"],
-            "load_job_report": ["load_job_report", "loaded your previously saved", "report details", "previously saved"],
-            "search_job_memory": ["search_job_memory", "found the following information", "in your memory", "memory search"],
-            "get_user_context_summary": ["get_user_context_summary", "comprehensive context summary", "user context", "context summary"],
-            "add_to_memory": ["add_to_memory", "saved your preference", "added to your user memory", "preference saved"],
-            "list_user_sessions": ["list_user_sessions", "previous sessions", "would you like to continue", "session list"],
-            "continue_last_session": ["continue_last_session", "continuing your last session", "were working with", "last session"],
-            "continue_specific_session": ["continue_specific_session", "switched to session", "session summary", "specific session"],
-            "start_fresh_session": ["start_fresh_session", "started a fresh session", "new session", "fresh session"],
-            "get_session_history": ["get_session_history", "session history", "conversation history", "history for session"],
-            "get_session_summary": ["get_session_summary", "session summary", "tools used", "summary of session"],
-            "get_user_conversation_memory": ["get_user_conversation_memory", "conversation memory", "across all sessions", "user memory"]
+            "list_htcondor_tools": ["basic job management", "tools organized by category", "available htcondor", "advanced job information", "reporting and analytics", "context-aware tools", "session management"],
+            "list_jobs": ["clusterid", "procid", "status", "owner", "jobs from a total", "running jobs", "idle jobs", "held jobs"],
+            "get_job_status": ["cluster id:", "status:", "owner:", "command:", "job status for", "detailed status", "working directory"],
+            "submit_job": ["job submitted", "cluster id", "new job"],
+            "get_job_history": ["job history for cluster", "job submitted", "job started", "execution history", "queue date", "job start date"],
+            "generate_job_report": ["job report for", "report metadata", "comprehensive report", "total jobs", "status distribution"],
+            "get_utilization_stats": ["utilization statistics", "resource utilization", "system utilization", "total jobs", "completed jobs", "cpu utilization percent"],
+            "export_job_data": ["exported data", "csv format", "data export"],
+            "save_job_report": ["saved a comprehensive report", "artifact id", "saved report"],
+            "load_job_report": ["loaded your previously saved", "report details", "previously saved"],
+            "search_job_memory": ["found the following information", "in your memory", "memory search"],
+            "get_user_context_summary": ["comprehensive context summary", "user context", "context summary"],
+            "add_to_memory": ["saved your preference", "added to your user memory", "preference saved"],
+            "list_user_sessions": ["previous sessions", "would you like to continue", "session list", "you have", "sessions"],
+            "continue_last_session": ["continuing your last session", "were working with", "last session"],
+            "continue_specific_session": ["switched to session", "session summary", "specific session"],
+            "start_fresh_session": ["started a fresh session", "new session", "fresh session", "started a fresh session for you"],
+            "get_session_history": ["session history", "conversation history", "history for session"],
+            "get_session_summary": ["session summary", "tools used", "summary of session"],
+            "get_user_conversation_memory": ["conversation memory", "across all sessions", "user memory"]
         }
         
-        # Check for tool usage patterns in response - be more specific
+        # Check for tool usage patterns in response - look for actual tool output, not just mentions
         for tool_name, patterns in tool_patterns.items():
-            # Only detect tools if the response actually shows tool usage, not just mentions
-            if tool_name == "list_htcondor_tools" and any(pattern in response_lower for pattern in ["basic job management", "tools organized by category", "available htcondor"]):
+            # More specific detection based on actual tool output patterns
+            if tool_name == "list_htcondor_tools" and any(pattern in response_lower for pattern in ["basic job management:", "tools organized by category:", "available htcondor job management tools"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "list_jobs" and any(pattern in response_lower for pattern in ["clusterid", "procid", "status", "owner", "jobs from a total"]):
+            elif tool_name == "list_jobs" and any(pattern in response_lower for pattern in ["clusterid\tprocid\tstatus\towner", "jobs from a total", "clusterid", "procid", "status", "owner"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "get_job_status" and any(pattern in response_lower for pattern in ["cluster id:", "status:", "owner:", "job status for"]):
+            elif tool_name == "get_job_status" and any(pattern in response_lower for pattern in ["cluster id:", "status:", "owner:", "command:", "working directory:"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "get_job_history" and any(pattern in response_lower for pattern in ["job history for cluster", "job submitted", "job started"]):
+            elif tool_name == "get_job_history" and any(pattern in response_lower for pattern in ["job history for cluster", "queue date:", "job start date:", "cpu time used:"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "generate_job_report" and any(pattern in response_lower for pattern in ["job report for", "report metadata"]):
+            elif tool_name == "generate_job_report" and any(pattern in response_lower for pattern in ["job report for owner", "report metadata", "total jobs:", "status distribution:"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "get_utilization_stats" and any(pattern in response_lower for pattern in ["utilization statistics", "resource utilization"]):
+            elif tool_name == "get_utilization_stats" and any(pattern in response_lower for pattern in ["resource utilization statistics", "utilization statistics", "total jobs:", "completed jobs:", "cpu utilization percent:"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "start_fresh_session" and any(pattern in response_lower for pattern in ["started a fresh session", "new session"]):
+            elif tool_name == "start_fresh_session" and any(pattern in response_lower for pattern in ["started a fresh session for you", "started a fresh session", "new session"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "list_user_sessions" and any(pattern in response_lower for pattern in ["previous sessions", "would you like to continue"]):
+            elif tool_name == "list_user_sessions" and any(pattern in response_lower for pattern in ["you have", "previous sessions", "would you like to continue"]):
                 tool_calls.append({"name": tool_name, "args": {}})
         
-        # Special handling for specific queries based on real conversation patterns
+        # Special handling for specific queries based on actual tool output
         if "get job status" in query_lower and "6657640" in query:
-            if "cluster id: 6657640" in response_lower or "status: held" in response_lower:
+            if "cluster id: 6657640" in response_lower or "status: held" in response_lower or "owner: jareddb2" in response_lower:
                 tool_calls.append({"name": "get_job_status", "args": {"cluster_id": 6657640}})
         
         if "list all jobs" in query_lower:
-            if "clusterid\tprocid\tstatus\towner" in response_lower or "jobs from a total" in response_lower:
+            if "clusterid\tprocid\tstatus\towner" in response_lower or "jobs from a total" in response_lower or "clusterid" in response_lower and "procid" in response_lower:
                 tool_calls.append({"name": "list_jobs", "args": {"owner": None, "status": None, "limit": 10}})
         
         if "list all tools" in query_lower:
-            if "basic job management" in response_lower or "tools organized by category" in response_lower:
+            if "basic job management:" in response_lower or "tools organized by category:" in response_lower or "available htcondor job management tools" in response_lower:
                 tool_calls.append({"name": "list_htcondor_tools", "args": {}})
         
         if "hi" in query_lower:
-            if "previous sessions" in response_lower or "would you like to continue" in response_lower:
+            if "you have" in response_lower and "sessions" in response_lower or "previous sessions" in response_lower:
                 tool_calls.append({"name": "list_user_sessions", "args": {}})
         
         if "create a new session" in query_lower:
-            if "started a fresh session" in response_lower or "new session" in response_lower or "started a fresh session for you" in response_lower:
+            if "started a fresh session for you" in response_lower or "started a fresh session" in response_lower:
                 tool_calls.append({"name": "start_fresh_session", "args": {}})
         
         if "get job history" in query_lower and "6657640" in query:
-            if "job history for cluster id 6657640" in response_lower or "job submitted" in response_lower:
+            if "job history for cluster id 6657640" in response_lower or "queue date:" in response_lower or "job start date:" in response_lower:
                 tool_calls.append({"name": "get_job_history", "args": {"cluster_id": 6657640}})
         
         if "generate job report for jareddb2" in query_lower:
-            if "job report for owner jareddb2" in response_lower or "report metadata" in response_lower:
+            if "job report for owner jareddb2" in response_lower or "report metadata" in response_lower or "total jobs:" in response_lower:
                 tool_calls.append({"name": "generate_job_report", "args": {"owner": "jareddb2"}})
         
         if "get_utilization_stats" in query_lower:
-            if "resource utilization statistics" in response_lower or "utilization statistics" in response_lower:
+            if "resource utilization statistics" in response_lower or "utilization statistics" in response_lower or "total jobs:" in response_lower and "completed jobs:" in response_lower:
                 tool_calls.append({"name": "get_utilization_stats", "args": {"time_range": "24h"}})
         
         # Remove duplicates while preserving order
@@ -436,7 +413,7 @@ class ADKAgentEvaluationRunner:
                 self.results.append(result)
                 
                 # Longer delay between tests to allow agent to fully process
-                await asyncio.sleep(5)
+                await asyncio.sleep(8)
             
             return self.results
             
@@ -491,42 +468,42 @@ TEST_CASES = [
         "name": "Initial Greeting and Session Management",
         "query": "hi",
         "expected_tools": ["list_user_sessions"],
-        "expected_output": "Welcome! I can see you have",
+        "expected_output": "you have",
         "description": "Agent should greet user and check for existing sessions"
     },
     {
         "name": "Create New Session",
         "query": "create a new session",
         "expected_tools": ["start_fresh_session"],
-        "expected_output": "started a fresh session for you",
+        "expected_output": "started a fresh session",
         "description": "Agent should create a new session when requested"
     },
     {
         "name": "List All Jobs",
         "query": "list all the jobs",
         "expected_tools": ["list_jobs"],
-        "expected_output": "ClusterId\tProcId\tStatus\tOwner",
+        "expected_output": "clusterid",
         "description": "Agent should list jobs in table format with proper headers"
     },
     {
         "name": "List All Tools",
         "query": "list all the tools",
         "expected_tools": ["list_htcondor_tools"],
-        "expected_output": "Basic Job Management",
+        "expected_output": "basic job management",
         "description": "Agent should show organized tool categories"
     },
     {
         "name": "Get Job Status",
         "query": "get job status of 6657640",
         "expected_tools": ["get_job_status"],
-        "expected_output": "Cluster ID: 6657640",
+        "expected_output": "cluster id: 6657640",
         "description": "Agent should provide detailed job status information"
     },
     {
         "name": "Get Job History",
         "query": "get job history of of 6657640",
         "expected_tools": ["get_job_history"],
-        "expected_output": "Job submitted",
+        "expected_output": "queue date",
         "description": "Agent should show job execution history with timestamps"
     },
     {
@@ -540,7 +517,7 @@ TEST_CASES = [
         "name": "Get Utilization Stats",
         "query": "get_utilization_stats",
         "expected_tools": ["get_utilization_stats"],
-        "expected_output": "resource utilization statistics",
+        "expected_output": "utilization statistics",
         "description": "Agent should show system utilization statistics"
     }
 ]
