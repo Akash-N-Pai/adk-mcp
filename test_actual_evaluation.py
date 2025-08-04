@@ -24,6 +24,15 @@ def test_single_evaluation():
         print("🚀 Starting agent...")
         runner.start_agent()
         
+        # Initialize the agent properly
+        print("\n👋 Step 1: Greeting the agent...")
+        greeting_response = runner.send_query_and_wait("hi", wait_time=8)
+        print(f"📄 Greeting response: {greeting_response[:200]}...")
+        
+        print("\n🆕 Step 2: Creating a new session...")
+        session_response = runner.send_query_and_wait("create a new session", wait_time=8)
+        print(f"📄 Session response: {session_response[:200]}...")
+        
         # Test case 3: List All Jobs
         test_case = {
             "name": "List All Jobs",
@@ -33,7 +42,7 @@ def test_single_evaluation():
             "description": "Agent should list jobs in table format"
         }
         
-        print(f"\n📋 Testing: {test_case['name']}")
+        print(f"\n📋 Step 3: Testing: {test_case['name']}")
         print(f"📝 Query: {test_case['query']}")
         print(f"🎯 Expected output: {test_case['expected_output']}")
         
