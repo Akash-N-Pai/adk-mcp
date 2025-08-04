@@ -109,14 +109,13 @@ class ADKAgentEvaluationRunner:
             self.agent_process.stdin.flush()
             
             # Wait for the agent to process and respond
-            await asyncio.sleep(3.0)
+            await asyncio.sleep(5.0)
             
-            # Read response from stdout with improved logic
+            # Simple response capture - read everything until we get a complete response
             response = ""
-            timeout = 45  # Increased timeout to 45 seconds for complete responses
+            timeout = 60  # 60 seconds timeout
             start_time = time.time()
-            consecutive_empty_reads = 0
-            max_empty_reads = 10  # Allow more empty reads before giving up
+            last_activity_time = time.time()
             
             print("⏳ Waiting for response...")
             
@@ -128,75 +127,76 @@ class ADKAgentEvaluationRunner:
                 
                 # Try to read from stdout
                 try:
-                    # Use select to check if there's data to read
                     import select
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.5)
+                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
                     
                     if ready:
                         line = self.agent_process.stdout.readline()
                         if line:
                             response += line
-                            consecutive_empty_reads = 0  # Reset counter
+                            last_activity_time = time.time()
                             print(f"📝 Read line: {line.strip()}")
                             
-                            # Check for interactive prompts and respond automatically
+                            # Handle interactive prompts
                             if "do you want to see more" in line.lower() or "would you like to" in line.lower() or "filter the list" in line.lower():
                                 print("🤖 Auto-responding to interactive prompt: 'no'")
                                 self.agent_process.stdin.write("no\n")
                                 self.agent_process.stdin.flush()
                                 await asyncio.sleep(1.0)
                             
-                            # Check for end of response indicators
+                            # Check if we've reached the end of a complete response
                             if "[user]:" in line and "htcondor_mcp_client_agent" in line:
-                                print("✅ Found agent prompt, continuing to read full response...")
-                                # Continue reading to get the complete response
-                                await asyncio.sleep(1.0)
+                                print("✅ Found agent prompt, checking if response is complete...")
+                                # Wait a bit more to see if there's additional content
+                                await asyncio.sleep(2.0)
                                 
-                                # Read the complete response content
-                                complete_response_timeout = 15
-                                complete_start = time.time()
-                                while time.time() - complete_start < complete_response_timeout:
+                                # Read any remaining content
+                                additional_timeout = 10
+                                additional_start = time.time()
+                                while time.time() - additional_start < additional_timeout:
                                     try:
-                                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.3)
+                                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
                                         if ready:
-                                            complete_line = self.agent_process.stdout.readline()
-                                            if complete_line:
-                                                response += complete_line
-                                                print(f"📝 Complete response: {complete_line.strip()}")
+                                            additional_line = self.agent_process.stdout.readline()
+                                            if additional_line:
+                                                response += additional_line
+                                                last_activity_time = time.time()
+                                                print(f"📝 Additional: {additional_line.strip()}")
                                                 
-                                                # Check for interactive prompts and respond automatically
-                                                if "do you want to see more" in complete_line.lower() or "would you like to" in complete_line.lower() or "filter the list" in complete_line.lower():
-                                                    print("🤖 Auto-responding to interactive prompt: 'no'")
+                                                # Handle any additional interactive prompts
+                                                if "do you want to see more" in additional_line.lower() or "would you like to" in additional_line.lower():
+                                                    print("🤖 Auto-responding to additional prompt: 'no'")
                                                     self.agent_process.stdin.write("no\n")
                                                     self.agent_process.stdin.flush()
                                                     await asyncio.sleep(1.0)
                                                 
-                                                # If we find another prompt, we're done
-                                                if "[user]:" in complete_line and "htcondor_mcp_client_agent" in complete_line:
+                                                # If we find another prompt, we're definitely done
+                                                if "[user]:" in additional_line and "htcondor_mcp_client_agent" in additional_line:
                                                     print("✅ Found final prompt, response complete")
                                                     break
                                             else:
-                                                # No more data, we're done
-                                                print("✅ No more data, response complete")
                                                 break
                                         else:
-                                            # No data available, wait a bit more
-                                            await asyncio.sleep(0.5)
+                                            break
                                     except Exception as e:
-                                        print(f"⚠️ Error reading complete response: {e}")
+                                        print(f"⚠️ Error reading additional content: {e}")
                                         break
-                                break
-                            elif "type exit to exit" in line:  # Agent startup message
-                                print("✅ Found agent startup message")
-                                continue  # Continue reading for actual response
+                                
+                                # If we have substantial content, consider response complete
+                                if len(response.strip()) > 50:
+                                    print("✅ Response appears complete with substantial content")
+                                    break
                         else:
-                            consecutive_empty_reads += 1
-                            if consecutive_empty_reads >= max_empty_reads:
-                                print(f"✅ No more data after {max_empty_reads} empty reads")
+                            # No data available, check if we've been inactive too long
+                            if time.time() - last_activity_time > 5.0:
+                                print("✅ No activity for 5 seconds, response likely complete")
                                 break
                     else:
-                        # No data available, wait a bit longer
-                        await asyncio.sleep(0.5)
+                        # No data available, check if we've been inactive too long
+                        if time.time() - last_activity_time > 5.0:
+                            print("✅ No data available for 5 seconds, response likely complete")
+                            break
+                        await asyncio.sleep(0.2)
                         
                 except Exception as read_error:
                     print(f"⚠️ Read error: {read_error}")
@@ -206,31 +206,31 @@ class ADKAgentEvaluationRunner:
                 print("⚠️ No response received, using fallback")
                 response = "No response received from agent"
             
-            # Clean up the response - keep more content
+            # Clean up the response - keep all meaningful content
             response = response.strip()
             
-            # Remove log messages but keep more of the agent's response
+            # Remove log messages but keep all agent responses and data
             lines = response.split('\n')
             cleaned_lines = []
-            skip_log_lines = False
             
             for line in lines:
-                # Skip initial log messages
+                # Skip only obvious log messages
                 if any(skip in line.lower() for skip in [
                     'log setup complete', 'to access latest log', 'running agent', 
                     'type exit to exit', 'tail -f'
                 ]):
                     continue
                 
-                # Keep agent responses and content
-                if '[htcondor_mcp_client_agent]:' in line:
-                    # Extract just the agent's response part
-                    parts = line.split('[htcondor_mcp_client_agent]:')
-                    if len(parts) > 1:
-                        cleaned_lines.append(parts[1].strip())
-                elif line.strip() and not line.startswith('[user]:'):
-                    # Keep non-empty lines that aren't user prompts
-                    cleaned_lines.append(line)
+                # Keep all other content
+                if line.strip():
+                    # Clean up agent response format if present
+                    if '[htcondor_mcp_client_agent]:' in line:
+                        parts = line.split('[htcondor_mcp_client_agent]:')
+                        if len(parts) > 1:
+                            cleaned_lines.append(parts[1].strip())
+                    elif not line.startswith('[user]:'):
+                        # Keep all non-user prompt lines
+                        cleaned_lines.append(line)
             
             response = '\n'.join(cleaned_lines).strip()
             
@@ -242,6 +242,7 @@ class ADKAgentEvaluationRunner:
                 response = response[10:].strip()
             
             print(f"📥 Received response: {len(response)} characters")
+            print(f"📄 Full response preview: {response[:200]}...")
             return response
             
         except Exception as e:
@@ -369,7 +370,7 @@ class ADKAgentEvaluationRunner:
             # More specific detection based on actual tool output patterns
             if tool_name == "list_htcondor_tools" and any(pattern in response_lower for pattern in ["basic job management:", "tools organized by category:", "available htcondor job management tools"]):
                 tool_calls.append({"name": tool_name, "args": {}})
-            elif tool_name == "list_jobs" and any(pattern in response_lower for pattern in ["clusterid\tprocid\tstatus\towner", "jobs from a total", "jobs from the list", "here are the first", "there are a total of", "clusterid", "procid", "status", "owner"]):
+            elif tool_name == "list_jobs" and any(pattern in response_lower for pattern in ["clusterid\tprocid\tstatus\towner", "jobs from a total", "jobs from the list", "here are the first", "there are a total of", "| clusterid | procid | status | owner |", "clusterid", "procid", "status", "owner"]):
                 tool_calls.append({"name": tool_name, "args": {}})
             elif tool_name == "get_job_status" and any(pattern in response_lower for pattern in ["cluster id:", "status:", "owner:", "command:", "working directory:"]):
                 tool_calls.append({"name": tool_name, "args": {}})
@@ -395,6 +396,7 @@ class ADKAgentEvaluationRunner:
                 "jobs from the list" in response_lower or 
                 "here are the first" in response_lower or
                 "there are a total of" in response_lower or
+                "| clusterid | procid | status | owner |" in response_lower or
                 ("clusterid" in response_lower and "procid" in response_lower and "status" in response_lower)):
                 tool_calls.append({"name": "list_jobs", "args": {"owner": None, "status": None, "limit": 10}})
         
