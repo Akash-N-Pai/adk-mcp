@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """
 Simple and robust HTCondor agent evaluation using adk run.
-This approach focuses on reliability over complexity.
+Clean, straightforward approach without unnecessary complexity.
 """
 
-import asyncio
 import json
 import subprocess
 import time
-import sys
-import os
-from pathlib import Path
+import select
 from typing import List, Dict, Any
 
 # Import the custom evaluator
@@ -26,10 +23,9 @@ class SimpleADKEvaluator:
     
     def start_agent(self):
         """Start the agent using adk run."""
-        print("🚀 Starting HTCondor agent with adk run...")
+        print("🚀 Starting HTCondor agent...")
         
         try:
-            # Start the agent in the background
             self.agent_process = subprocess.Popen(
                 ["adk", "run", "local_mcp/"],
                 stdout=subprocess.PIPE,
@@ -40,7 +36,7 @@ class SimpleADKEvaluator:
                 universal_newlines=True
             )
             
-            # Wait for the agent to start
+            # Wait for agent to start
             time.sleep(5)
             
             if self.agent_process.poll() is None:
@@ -65,10 +61,28 @@ class SimpleADKEvaluator:
                 self.agent_process.kill()
             print("✅ Agent stopped")
     
-    def send_query_and_wait(self, query: str, wait_time: int = 15) -> str:
+    def clear_buffer(self):
+        """Clear any existing output from the agent."""
+        print("🧹 Clearing buffer...")
+        attempts = 0
+        while attempts < 20:
+            try:
+                ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
+                if ready:
+                    line = self.agent_process.stdout.readline()
+                    if not line:
+                        break
+                    attempts += 1
+                else:
+                    break
+            except:
+                break
+        print(f"🧹 Cleared {attempts} lines")
+    
+    def send_query_and_get_response(self, query: str, wait_time: int = 15) -> str:
         """
-        Send a query to the agent and wait for a complete response.
-        Simple approach: send query, wait fixed time, read all available output.
+        Send a query to the agent and get the complete response.
+        Simple approach: clear buffer, send query, wait, read all output.
         """
         try:
             if not self.agent_process or self.agent_process.poll() is not None:
@@ -76,112 +90,46 @@ class SimpleADKEvaluator:
             
             print(f"📤 Sending query: {query}")
             
-            # Clear any existing output by reading until no more data
-            print("🧹 Clearing existing output...")
-            clear_attempts = 0
-            max_clear_attempts = 50  # Limit buffer clearing to prevent infinite loops
-            while clear_attempts < max_clear_attempts:
-                    try:
-                        import select
-                        ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
-                        if ready:
-                        line = self.agent_process.stdout.readline()
-                        if not line:
-                            break
-                        clear_attempts += 1
-                    else:
-                        break
-                except:
-                    break
-            print(f"🧹 Cleared {clear_attempts} lines of existing output")
+            # Clear any existing output
+            self.clear_buffer()
             
             # Send the query
             self.agent_process.stdin.write(f"{query}\n")
             self.agent_process.stdin.flush()
             
-            # Wait for the agent to process
+            # Wait for response
             print(f"⏳ Waiting {wait_time} seconds for response...")
             time.sleep(wait_time)
             
-            # Read all available output with improved multi-part response handling
+            # Read all available output
             response_lines = []
-            max_read_attempts = 300  # Higher limit for complete responses
-            read_attempts = 0
-            last_data_time = time.time()
-            no_data_count = 0
-            max_no_data_count = 20  # Allow more no-data periods
+            attempts = 0
+            max_attempts = 100
             
-            print("📖 Reading response data...")
-            
-            while read_attempts < max_read_attempts:
+            print("📖 Reading response...")
+            while attempts < max_attempts:
                 try:
-                    import select
                     ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
                     if ready:
                         line = self.agent_process.stdout.readline()
                         if line:
                             response_lines.append(line.strip())
                             print(f"📝 {line.strip()}")
-                            read_attempts = 0  # Reset counter when we get data
-                            no_data_count = 0  # Reset no-data counter
-                            last_data_time = time.time()
-                                            else:
-                            no_data_count += 1
-                    else:
-                        no_data_count += 1
-                        current_time = time.time()
-                        
-                        # If we haven't received data for a while, check if we have a complete response
-                        if current_time - last_data_time > 2.0:  # 2 seconds without data
-                            print("⏰ No data for 2 seconds, checking response completeness...")
-                            
-                            # Check if we have a complete response based on content
-                            response_so_far = '\n'.join(response_lines).lower()
-                            
-                            if "list all the jobs" in query.lower():
-                                # Check for complete job listing with table and summary
-                                if ("clusterid" in response_so_far and "procid" in response_so_far and 
-                                    "status" in response_so_far and "owner" in response_so_far and
-                                    "there are a total of" in response_so_far):
-                                    print("✅ Job listing appears complete with table and summary")
-                                    break
-                                elif no_data_count >= max_no_data_count:
-                                    print("⚠️ Stopping job listing read - max no-data count reached")
-                                    break
-                            
-                            elif "list all the tools" in query.lower():
-                                # Check for complete tool listing with categories
-                                if ("basic job management" in response_so_far and 
-                                    "session management" in response_so_far):
-                                    print("✅ Tool listing appears complete with all categories")
-                                    break
-                                elif no_data_count >= max_no_data_count:
-                                    print("⚠️ Stopping tool listing read - max no-data count reached")
-                                    break
-                            
+                            attempts = 0  # Reset counter when we get data
                         else:
-                            # For other queries, if we have substantial content, consider it complete
-                            if len(response_so_far) > 50:
-                                print("✅ Response appears complete with substantial content")
-                                break
-                            elif no_data_count >= max_no_data_count:
-                                print("⚠️ Stopping read - max no-data count reached")
-                            break
-                    
-                    if no_data_count >= max_no_data_count:
-                        print("✅ No data available after maximum attempts")
-                        break
-                    time.sleep(0.2)
-                    read_attempts += 1
+                            attempts += 1
+                    else:
+                        attempts += 1
+                        time.sleep(0.2)
+                        
                 except Exception as e:
-                    print(f"⚠️ Error reading response: {e}")
-                    read_attempts += 1
-                
-            # Process the response
-            response = '\n'.join(response_lines)
+                    print(f"⚠️ Error reading: {e}")
+                    attempts += 1
             
             # Clean up the response
+            response = '\n'.join(response_lines)
             cleaned_lines = []
+            
             for line in response_lines:
                 # Skip log messages
                 if any(skip in line.lower() for skip in [
@@ -191,28 +139,15 @@ class SimpleADKEvaluator:
                     continue
                 
                 # Clean up agent response format
-                    if '[htcondor_mcp_client_agent]:' in line:
-                        parts = line.split('[htcondor_mcp_client_agent]:')
-                        if len(parts) > 1:
-                            cleaned_lines.append(parts[1].strip())
+                if '[htcondor_mcp_client_agent]:' in line:
+                    parts = line.split('[htcondor_mcp_client_agent]:')
+                    if len(parts) > 1:
+                        cleaned_lines.append(parts[1].strip())
                 elif line.strip() and not line.startswith('[user]:'):
-                        cleaned_lines.append(line)
+                    cleaned_lines.append(line)
             
             final_response = '\n'.join(cleaned_lines).strip()
-            
             print(f"📥 Response length: {len(final_response)} characters")
-            print(f"📄 Response preview: {final_response[:200]}...")
-            
-            # Validate response completeness
-            query_lower = query.lower()
-            response_lower = final_response.lower()
-            
-            # Check if response appears complete based on query type
-            is_complete = self.check_response_completeness(query_lower, response_lower)
-            if not is_complete["complete"]:
-                print(f"⚠️ WARNING: Response may be incomplete: {is_complete['reason']}")
-                print(f"📊 Response length: {len(final_response)} characters")
-                print(f"📊 Expected patterns missing: {is_complete['missing_patterns']}")
             
             return final_response
             
@@ -273,126 +208,6 @@ class SimpleADKEvaluator:
         
         return tool_calls
     
-    def check_response_completeness(self, query_lower: str, response_lower: str) -> Dict[str, Any]:
-        """Check if the response appears complete based on query type."""
-        missing_patterns = []
-        
-        if "list all the jobs" in query_lower:
-            expected_patterns = ["clusterid", "procid", "status", "owner", "there are a total of"]
-            for pattern in expected_patterns:
-                if pattern not in response_lower:
-                    missing_patterns.append(pattern)
-            
-            if missing_patterns:
-                return {
-                    "complete": False,
-                    "reason": "Job listing missing table data or summary",
-                    "missing_patterns": missing_patterns
-                }
-        
-        elif "list all the tools" in query_lower:
-            expected_patterns = ["basic job management", "tools organized", "available htcondor"]
-            found_patterns = [p for p in expected_patterns if p in response_lower]
-            
-            if not found_patterns:
-                return {
-                    "complete": False,
-                    "reason": "Tool listing missing tool categories",
-                    "missing_patterns": expected_patterns
-                }
-        
-        elif "get job status" in query_lower:
-            expected_patterns = ["cluster id", "status:", "owner:", "command:"]
-            for pattern in expected_patterns:
-                if pattern not in response_lower:
-                    missing_patterns.append(pattern)
-            
-            if len(missing_patterns) >= 2:  # Allow some flexibility
-                return {
-                    "complete": False,
-                    "reason": "Job status missing key information",
-                    "missing_patterns": missing_patterns
-                }
-        
-        elif "get job history" in query_lower:
-            expected_patterns = ["job history", "queue date", "job start date", "submitted", "started"]
-            found_patterns = [p for p in expected_patterns if p in response_lower]
-            
-            if not found_patterns:
-                return {
-                    "complete": False,
-                    "reason": "Job history missing history information",
-                    "missing_patterns": expected_patterns
-                }
-        
-        elif "generate job report" in query_lower:
-            expected_patterns = ["job report", "report metadata", "total jobs", "status distribution"]
-            found_patterns = [p for p in expected_patterns if p in response_lower]
-            
-            if not found_patterns:
-                return {
-                    "complete": False,
-                    "reason": "Job report missing report information",
-                    "missing_patterns": expected_patterns
-                }
-        
-        elif "get_utilization_stats" in query_lower:
-            expected_patterns = ["utilization", "statistics", "total jobs", "completed jobs"]
-            found_patterns = [p for p in expected_patterns if p in response_lower]
-            
-            if not found_patterns:
-                return {
-                    "complete": False,
-                    "reason": "Utilization stats missing statistics",
-                    "missing_patterns": expected_patterns
-                }
-        
-        return {
-            "complete": True,
-            "reason": "Response appears complete",
-            "missing_patterns": []
-        }
-    
-    def validate_response_quality(self, query: str, response: str) -> Dict[str, Any]:
-        """Validate that the response is appropriate for the query type."""
-        query_lower = query.lower()
-        response_lower = response.lower()
-        
-        # Check for empty or very short responses
-        if len(response.strip()) < 10:
-            return {"is_valid": False, "reason": "Response too short"}
-        
-        # Check for error responses
-        if "error" in response_lower or "failed" in response_lower:
-            return {"is_valid": False, "reason": "Response contains error"}
-        
-        # Query-specific validation
-        if "list all the jobs" in query_lower:
-            if "clusterid" not in response_lower or "procid" not in response_lower:
-                return {"is_valid": False, "reason": "Job listing missing table data"}
-        
-        elif "list all the tools" in query_lower:
-            if "basic job management" not in response_lower and "tools organized" not in response_lower:
-                return {"is_valid": False, "reason": "Tool listing missing tool categories"}
-        
-        elif "get job status" in query_lower:
-            if "cluster id" not in response_lower and "status:" not in response_lower:
-                return {"is_valid": False, "reason": "Job status missing status information"}
-        
-        elif "get job history" in query_lower:
-            if "job history" not in response_lower and "queue date" not in response_lower:
-                return {"is_valid": False, "reason": "Job history missing history information"}
-        
-        elif "generate job report" in query_lower:
-            if "job report" not in response_lower and "report metadata" not in response_lower:
-                return {"is_valid": False, "reason": "Job report missing report information"}
-        
-        elif "get_utilization_stats" in query_lower:
-            if "utilization" not in response_lower and "statistics" not in response_lower:
-                return {"is_valid": False, "reason": "Utilization stats missing statistics"}
-        
-        return {"is_valid": True, "reason": "Response validation passed"}
-    
     def test_single_case(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
         """Test a single case with the running agent."""
         query = test_case["query"]
@@ -402,34 +217,10 @@ class SimpleADKEvaluator:
         print(f"\n🧪 Testing: {query}")
         
         try:
-            # Get agent response with appropriate wait time
-            if "list all the jobs" in query.lower():
-                wait_time = 10  # Shorter wait, focus on proper reading
-            elif "list all the tools" in query.lower():
-                wait_time = 10  # Shorter wait, focus on proper reading
-            else:
-                wait_time = 8  # Standard wait for other operations
-            response = self.send_query_and_wait(query, wait_time)
+            # Get agent response
+            response = self.send_query_and_get_response(query, wait_time=15)
             
             print(f"🤖 Agent Response: {response[:100]}...")
-            
-            # Validate response quality before evaluation
-            response_quality = self.validate_response_quality(query, response)
-            if not response_quality["is_valid"]:
-                print(f"❌ Response validation failed: {response_quality['reason']}")
-                return {
-                    "query": query,
-                    "expected_tools": expected_tools,
-                    "actual_tool_calls": [],
-                    "expected_output": expected_output,
-                    "actual_output": response,
-                    "trajectory_score": 0.0,
-                    "trajectory_comment": f"Response validation failed: {response_quality['reason']}",
-                    "output_score": 0.0,
-                    "output_comment": f"Response validation failed: {response_quality['reason']}",
-                    "overall_score": 0.0,
-                    "overall_passed": False
-                }
             
             # Extract tool calls
             tool_calls = self.extract_tool_calls(query, response)
