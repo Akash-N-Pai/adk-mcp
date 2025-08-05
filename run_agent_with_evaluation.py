@@ -25,7 +25,7 @@ except ImportError as e:
 
 # Import the custom evaluator
 try:
-from custom_evaluator import HTCondorComprehensiveEvaluator
+    from custom_evaluator import HTCondorComprehensiveEvaluator
 except ImportError as e:
     print(f"❌ Custom evaluator import error: {e}")
     exit(1)
@@ -141,7 +141,7 @@ class RobustADKEvaluator:
             # Test the connection
             await self._test_connection()
             
-                return True
+            return True
                 
         except Exception as e:
             logger.error(f"❌ Failed to start agent: {e}")
@@ -183,7 +183,7 @@ class RobustADKEvaluator:
         for attempt in range(self.config.max_retries):
             try:
                 if not self.runner:
-                raise Exception("Agent not running")
+                    raise Exception("Agent not running")
             
                 logger.info(f"📤 Sending query (attempt {attempt + 1}): {query}")
                 
@@ -395,17 +395,17 @@ class RobustADKEvaluator:
     
     def _create_error_result(self, test_case: Dict[str, Any], error_message: str) -> Dict[str, Any]:
         """Create a result for failed test cases."""
-            return {
+        return {
             "query": test_case["query"],
             "expected_tools": test_case["expected_tools"],
             "actual_tool_calls": [],
             "expected_output": test_case["expected_output"],
             "actual_output": error_message,
-                "trajectory_score": 0.0,
+            "trajectory_score": 0.0,
             "trajectory_comment": f"Error: {error_message}",
-                "output_score": 0.0,
+            "output_score": 0.0,
             "output_comment": f"Error: {error_message}",
-                "overall_score": 0.0,
+            "overall_score": 0.0,
             "overall_passed": False,
             "execution_time": 0.0,
             "timestamp": time.time(),
@@ -496,9 +496,9 @@ class RobustADKEvaluator:
         }
         
         try:
-        with open(output_file, 'w') as f:
-            json.dump(report, f, indent=2)
-            logger.info(f"✅ Report saved: {output_file}")
+            with open(output_file, 'w') as f:
+                json.dump(report, f, indent=2)
+                logger.info(f"✅ Report saved: {output_file}")
         except Exception as e:
             logger.error(f"❌ Failed to save report: {e}")
 
@@ -541,7 +541,7 @@ async def main():
             results = await evaluator.run_evaluation_suite(test_cases)
             evaluator.results = results
     
-    # Generate report
+            # Generate report
             evaluator.generate_report()
             
     except Exception as e:
@@ -553,7 +553,7 @@ async def main():
 
 if __name__ == "__main__":
     try:
-    asyncio.run(main()) 
+        asyncio.run(main()) 
     except KeyboardInterrupt:
         logger.info("⏹️ Evaluation interrupted by user")
     except Exception as e:
