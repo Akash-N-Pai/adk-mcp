@@ -130,7 +130,7 @@ class RobustADKEvaluator:
             
             # Create runner with the existing HTCondor agent
             self.runner = Runner(
-                agent=htcondor_mcp_client_agent,
+                agent=root_agent,
                 app_name=APP_NAME,
                 session_service=self.session_service
             )
