@@ -152,11 +152,11 @@ class RobustADKEvaluator:
             # Create user message in ADK format
             content = types.Content(role='user', parts=[types.Part(text="hi")])
             
-            # Use run_async to get events
+            # Use run_async to get events with the actual session
             final_response_parts = []
             async for event in self.runner.run_async(
-                user_id="test_user",
-                session_id="test_session",
+                user_id=self.session.user_id,
+                session_id=self.session.session_id,
                 new_message=content
             ):
                 if event.is_final_response():
