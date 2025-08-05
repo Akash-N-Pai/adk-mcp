@@ -1,155 +1,96 @@
 #!/usr/bin/env python3
 """
-Simple and robust HTCondor agent evaluation using adk run.
-Clean, straightforward approach without unnecessary complexity.
+Simple and robust HTCondor agent evaluation using ADK Runner.
+Clean, straightforward approach using proper ADK architecture.
 """
 
 import json
-import subprocess
+import asyncio
 import time
-import select
 from typing import List, Dict, Any
+
+# Import ADK classes
+from google.adk.core.agent import Agent
+from google.adk.core.runner import Runner
+from google.adk.core.session_service import InMemorySessionService
 
 # Import the custom evaluator
 from custom_evaluator import HTCondorComprehensiveEvaluator
 
+# Import the existing HTCondor agent from local_mcp
+from local_mcp.htcondor_mcp_client_agent import htcondor_mcp_client_agent
+
 class SimpleADKEvaluator:
-    """Simple and robust ADK agent evaluator."""
+    """Simple and robust ADK agent evaluator using Runner."""
     
     def __init__(self):
         self.evaluator = HTCondorComprehensiveEvaluator()
-        self.agent_process = None
+        self.runner = None
+        self.session_service = None
+        self.session = None
         self.results = []
     
-    def start_agent(self):
-        """Start the agent using adk run."""
-        print("🚀 Starting HTCondor agent...")
+    async def start_agent(self):
+        """Start the agent using ADK Runner."""
+        print("🚀 Starting HTCondor agent with ADK Runner...")
         
         try:
-            self.agent_process = subprocess.Popen(
-                ["adk", "run", "local_mcp/"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                stdin=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
+            # Setup session management
+            self.session_service = InMemorySessionService()
+            
+            # Create session
+            APP_NAME = "htcondor_evaluation_app"
+            USER_ID = "evaluation_user"
+            SESSION_ID = "eval_session_001"
+            
+            self.session = await self.session_service.create_session(
+                app_name=APP_NAME,
+                user_id=USER_ID,
+                session_id=SESSION_ID
             )
+            print(f"✅ Session created: {APP_NAME}/{USER_ID}/{SESSION_ID}")
             
-            # Wait for agent to start
-            time.sleep(5)
+            # Create runner with the existing HTCondor agent
+            self.runner = Runner(
+                agent=htcondor_mcp_client_agent,
+                app_name=APP_NAME,
+                session_service=self.session_service
+            )
+            print(f"✅ Runner created for agent '{self.runner.agent.name}'")
             
-            if self.agent_process.poll() is None:
-                print("✅ Agent started successfully")
-                return True
-            else:
-                print("❌ Agent failed to start")
-                return False
+            return True
                 
         except Exception as e:
             print(f"❌ Failed to start agent: {e}")
             return False
     
-    def stop_agent(self):
-        """Stop the agent process."""
-        if self.agent_process:
+    async def stop_agent(self):
+        """Stop the agent (cleanup session)."""
+        if self.session_service and self.session:
             print("🛑 Stopping agent...")
-            self.agent_process.terminate()
             try:
-                self.agent_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.agent_process.kill()
-            print("✅ Agent stopped")
+                await self.session_service.delete_session(self.session.session_id)
+                print("✅ Agent stopped")
+            except Exception as e:
+                print(f"⚠️ Error stopping agent: {e}")
     
-    def clear_buffer(self):
-        """Clear any existing output from the agent."""
-        print("🧹 Clearing buffer...")
-        attempts = 0
-        while attempts < 20:
-            try:
-                ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.1)
-                if ready:
-                    line = self.agent_process.stdout.readline()
-                    if not line:
-                        break
-                    attempts += 1
-                else:
-                    break
-            except:
-                break
-        print(f"🧹 Cleared {attempts} lines")
-    
-    def send_query_and_get_response(self, query: str, wait_time: int = 15) -> str:
+    async def send_query_and_get_response(self, query: str, wait_time: int = 15) -> str:
         """
-        Send a query to the agent and get the complete response.
-        Simple approach: clear buffer, send query, wait, read all output.
+        Send a query to the agent and get the complete response using Runner.
         """
         try:
-            if not self.agent_process or self.agent_process.poll() is not None:
+            if not self.runner:
                 raise Exception("Agent not running")
             
             print(f"📤 Sending query: {query}")
             
-            # Clear any existing output
-            self.clear_buffer()
+            # Send query using runner
+            response = await self.runner.run(query)
             
-            # Send the query
-            self.agent_process.stdin.write(f"{query}\n")
-            self.agent_process.stdin.flush()
+            print(f"📥 Response received: {len(response.content)} characters")
+            print(f"📄 Response preview: {response.content[:200]}...")
             
-            # Wait for response
-            print(f"⏳ Waiting {wait_time} seconds for response...")
-            time.sleep(wait_time)
-            
-            # Read all available output
-            response_lines = []
-            attempts = 0
-            max_attempts = 100
-            
-            print("📖 Reading response...")
-            while attempts < max_attempts:
-                try:
-                    ready, _, _ = select.select([self.agent_process.stdout], [], [], 0.2)
-                    if ready:
-                        line = self.agent_process.stdout.readline()
-                        if line:
-                            response_lines.append(line.strip())
-                            print(f"📝 {line.strip()}")
-                            attempts = 0  # Reset counter when we get data
-                        else:
-                            attempts += 1
-                    else:
-                        attempts += 1
-                        time.sleep(0.2)
-                        
-                except Exception as e:
-                    print(f"⚠️ Error reading: {e}")
-                    attempts += 1
-            
-            # Clean up the response
-            response = '\n'.join(response_lines)
-            cleaned_lines = []
-            
-            for line in response_lines:
-                # Skip log messages
-                if any(skip in line.lower() for skip in [
-                    'log setup complete', 'to access latest log', 'running agent', 
-                    'type exit to exit', 'tail -f'
-                ]):
-                    continue
-                
-                # Clean up agent response format
-                if '[htcondor_mcp_client_agent]:' in line:
-                    parts = line.split('[htcondor_mcp_client_agent]:')
-                    if len(parts) > 1:
-                        cleaned_lines.append(parts[1].strip())
-                elif line.strip() and not line.startswith('[user]:'):
-                    cleaned_lines.append(line)
-            
-            final_response = '\n'.join(cleaned_lines).strip()
-            print(f"📥 Response length: {len(final_response)} characters")
-            
-            return final_response
+            return response.content
             
         except Exception as e:
             print(f"❌ Error communicating with agent: {e}")
@@ -208,7 +149,7 @@ class SimpleADKEvaluator:
         
         return tool_calls
     
-    def test_single_case(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
+    async def test_single_case(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
         """Test a single case with the running agent."""
         query = test_case["query"]
         expected_tools = test_case["expected_tools"]
@@ -218,7 +159,7 @@ class SimpleADKEvaluator:
         
         try:
             # Get agent response
-            response = self.send_query_and_get_response(query, wait_time=15)
+            response = await self.send_query_and_get_response(query, wait_time=15)
             
             print(f"🤖 Agent Response: {response[:100]}...")
             
@@ -268,13 +209,13 @@ class SimpleADKEvaluator:
                 "overall_passed": False
             }
     
-    def run_evaluation_suite(self, test_cases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def run_evaluation_suite(self, test_cases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Run evaluation on a suite of test cases."""
         print("🚀 Starting Simple ADK Agent Evaluation Suite")
         print(f"📋 Testing {len(test_cases)} cases...")
         
         # Start the agent
-        if not self.start_agent():
+        if not await self.start_agent():
             print("❌ Failed to start agent, cannot proceed")
             return []
         
@@ -283,19 +224,19 @@ class SimpleADKEvaluator:
             
             for i, test_case in enumerate(test_cases, 1):
                 print(f"\n--- Test Case {i}/{len(test_cases)} ---")
-                result = self.test_single_case(test_case)
+                result = await self.test_single_case(test_case)
                 self.results.append(result)
                 
                 # Wait between tests
                 if i < len(test_cases):
-                    print("⏳ Waiting 10 seconds before next test...")
-                    time.sleep(10)
+                    print("⏳ Waiting 5 seconds before next test...")
+                    await asyncio.sleep(5)
             
             return self.results
             
         finally:
             # Always stop the agent
-            self.stop_agent()
+            await self.stop_agent()
     
     def generate_report(self, output_file: str = "simple_adk_evaluation_report.json"):
         """Generate evaluation report."""
@@ -399,7 +340,7 @@ TEST_CASES = [
 ]
 
 
-def main():
+async def main():
     """Main function to run simple ADK agent evaluation."""
     print("🎯 Simple HTCondor MCP Agent Evaluation")
     print("=" * 50)
@@ -408,7 +349,7 @@ def main():
     runner = SimpleADKEvaluator()
     
     # Run evaluation suite
-    results = runner.run_evaluation_suite(TEST_CASES)
+    results = await runner.run_evaluation_suite(TEST_CASES)
     
     # Generate report
     runner.generate_report()
@@ -417,4 +358,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 
