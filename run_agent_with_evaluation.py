@@ -37,7 +37,7 @@ except ImportError as e:
 
 # Import the existing HTCondor agent from local_mcp
 try:
-    from local_mcp.htcondor_mcp_client_agent import htcondor_mcp_client_agent
+    from local_mcp.agent import root_agent
 except ImportError as e:
     print(f"❌ HTCondor agent import error: {e}")
     print("Please ensure local_mcp module is available")
