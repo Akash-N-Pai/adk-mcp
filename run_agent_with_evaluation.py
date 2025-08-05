@@ -9,15 +9,20 @@ import asyncio
 import time
 import logging
 import traceback
+import warnings
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
 
+# Ignore all warnings
+warnings.filterwarnings("ignore")
+
 # Import ADK classes
 try:
-    from google.adk.core.agent import Agent
-    from google.adk.core.runner import Runner
-    from google.adk.core.session_service import InMemorySessionService
+    from google.adk.agents import Agent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
 except ImportError as e:
     print(f"❌ ADK import error: {e}")
     print("Please ensure ADK is properly installed: pip install google-adk")
@@ -39,14 +44,7 @@ except ImportError as e:
     exit(1)
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('evaluation.log'),
-        logging.StreamHandler()
-    ]
-)
+logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 @dataclass
