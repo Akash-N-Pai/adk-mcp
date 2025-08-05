@@ -149,8 +149,27 @@ class RobustADKEvaluator:
     async def _test_connection(self):
         """Test the agent connection with a simple query."""
         try:
-            test_response = await self.runner.run("hi")
-            logger.info("✅ Agent connection test successful")
+            # Create user message in ADK format
+            content = types.Content(role='user', parts=[types.Part(text="hi")])
+            
+            # Use run_async to get events
+            final_response_parts = []
+            async for event in self.runner.run_async(
+                user_id="test_user",
+                session_id="test_session",
+                new_message=content
+            ):
+                if event.is_final_response():
+                    if event.content and event.content.parts:
+                        final_response_parts.extend(event.content.parts)
+            
+            # Assemble the final response text
+            if final_response_parts:
+                final_response_text = "".join([part.text for part in final_response_parts if part.text])
+                logger.info("✅ Agent connection test successful")
+            else:
+                logger.warning("⚠️ Agent connection test completed but no response received")
+                
         except Exception as e:
             logger.error(f"❌ Agent connection test failed: {e}")
             raise
@@ -185,20 +204,36 @@ class RobustADKEvaluator:
             
                 logger.info(f"📤 Sending query (attempt {attempt + 1}): {query}")
                 
-                # Send query with timeout
-                response = await asyncio.wait_for(
-                    self.runner.run(query),
-                    timeout=self.config.query_timeout
-                )
+                # Create user message in ADK format
+                content = types.Content(role='user', parts=[types.Part(text=query)])
                 
-                logger.info(f"📥 Response received: {len(response.content)} characters")
-                logger.debug(f"📄 Response preview: {response.content[:200]}...")
+                # Use run_async to get events with timeout
+                final_response_parts = []
+                async def run_with_timeout():
+                    async for event in self.runner.run_async(
+                        user_id=self.session.user_id if self.session else "evaluation_user",
+                        session_id=self.session.session_id if self.session else "eval_session",
+                        new_message=content
+                    ):
+                        if event.is_final_response():
+                            if event.content and event.content.parts:
+                                final_response_parts.extend(event.content.parts)
                 
-                # Cache the response
-                if self.config.enable_caching:
-                    self.cache[cache_key] = response.content
+                await asyncio.wait_for(run_with_timeout(), timeout=self.config.query_timeout)
                 
-                return response.content
+                # Assemble the final response text
+                if final_response_parts:
+                    final_response_text = "".join([part.text for part in final_response_parts if part.text])
+                    logger.info(f"📥 Response received: {len(final_response_text)} characters")
+                    logger.debug(f"📄 Response preview: {final_response_text[:200]}...")
+                    
+                    # Cache the response
+                    if self.config.enable_caching:
+                        self.cache[cache_key] = final_response_text
+                    
+                    return final_response_text
+                else:
+                    return "Error: No response received from agent"
                 
             except asyncio.TimeoutError:
                 logger.warning(f"⏰ Query timeout on attempt {attempt + 1}")
@@ -214,24 +249,14 @@ class RobustADKEvaluator:
                 logger.info(f"⏳ Waiting {wait_time}s before retry...")
                 await asyncio.sleep(wait_time)
     
-    def extract_real_tool_calls(self, response) -> List[Dict]:
-        """Extract tool calls from actual ADK response metadata."""
+    def extract_real_tool_calls(self, response_text: str) -> List[Dict]:
+        """Extract tool calls from response text using pattern matching."""
         tool_calls = []
         
         try:
-            # Try to get tool calls from response metadata
-            if hasattr(response, 'tool_calls') and response.tool_calls:
-                for tool_call in response.tool_calls:
-                    tool_calls.append({
-                        "name": tool_call.get("name", "unknown"),
-                        "args": tool_call.get("arguments", {})
-                    })
-                logger.info(f"🔧 Extracted {len(tool_calls)} tool calls from metadata")
-                return tool_calls
-            
-            # Fallback to pattern matching if no metadata
-            logger.warning("⚠️ No tool call metadata found, using pattern matching")
-            return self._extract_tool_calls_pattern(response.content)
+            # Use pattern matching since we're getting text response
+            logger.info("🔧 Extracting tool calls using pattern matching")
+            return self._extract_tool_calls_pattern(response_text)
             
         except Exception as e:
             logger.error(f"❌ Error extracting tool calls: {e}")
