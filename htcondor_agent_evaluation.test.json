@@ -1,0 +1,404 @@
+{
+  "eval_set_id": "htcondor_agent_comprehensive_eval_set",
+  "name": "HTCondor Agent Comprehensive Evaluation",
+  "description": "Comprehensive evaluation test cases for the HTCondor MCP agent covering job management, session handling, and tool usage",
+  "eval_cases": [
+    {
+      "eval_id": "initial_greeting_and_session_check",
+      "conversation": [
+        {
+          "invocation_id": "eval-001-greeting",
+          "user_content": {
+            "parts": [
+              {
+                "text": "hi"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Welcome! I can see you have previous sessions. Would you like to continue your last session or start fresh?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {},
+                "name": "list_user_sessions"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_client_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "start_fresh_session",
+      "conversation": [
+        {
+          "invocation_id": "eval-002-fresh-session",
+          "user_content": {
+            "parts": [
+              {
+                "text": "start fresh"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "I've created a fresh session for you. How can I help you with HTCondor job management today?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {},
+                "name": "start_fresh_session"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_client_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "list_available_tools",
+      "conversation": [
+        {
+          "invocation_id": "eval-003-list-tools",
+          "user_content": {
+            "parts": [
+              {
+                "text": "list all tools"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Here are the HTCondor job management tools available:\n\n**Basic Job Management:**\n- list_jobs - List jobs with optional filtering (owner, status, limit)\n- get_job_status - Get detailed status for a specific job cluster ID\n- submit_job - Submit a new job with submit description\n\n**Advanced Job Information:**\n- get_job_history - Get job execution history for a specific cluster ID\n\n**Reporting and Analytics:**\n- generate_job_report - Generate comprehensive job reports\n- get_utilization_stats - Get resource utilization statistics\n- export_job_data - Export job data in various formats (JSON, CSV)\n\n**Context-Aware Tools (ADK Context Integration):**\n- save_job_report - Save a job report as an artifact using ADK Context\n- load_job_report - Load a previously saved job report using ADK Context\n- search_job_memory - Search memory for job-related information using ADK Context\n- get_user_context_summary - Get a comprehensive summary of the user's context and history\n- add_to_memory - Add information to memory using ADK Context\n\n**Session Management:**\n- list_user_sessions - List all your sessions\n- continue_last_session - Continue your most recent session\n- continue_specific_session - Continue a specific session by ID\n- start_fresh_session - Start a completely new session\n- get_session_history - Get full conversation history for a session\n- get_session_summary - Get summary of what was done in a session\n- get_user_conversation_memory - Get memory across all your sessions"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {},
+                "name": "list_htcondor_tools"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_client_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "list_running_jobs",
+      "conversation": [
+        {
+          "invocation_id": "eval-004-running-jobs",
+          "user_content": {
+            "parts": [
+              {
+                "text": "show me running jobs"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Here are the currently running jobs:\n\n| ClusterId | ProcId | Status | Owner |\n|-----------|--------|--------|-------|\n| 1234567   | 0      | Running | alice |\n| 1234568   | 0      | Running | bob   |\n\nTotal jobs found: 2"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {
+                  "status": "running",
+                  "limit": 10
+                },
+                "name": "list_jobs"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_client_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "get_job_status",
+      "conversation": [
+        {
+          "invocation_id": "eval-005-job-status",
+          "user_content": {
+            "parts": [
+              {
+                "text": "what's the status of job 1234567?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Job Status for Cluster 1234567:\n- **Status**: Running (2)\n- **Owner**: alice\n- **Command**: /home/user/script.sh\n- **Working Directory**: /home/user\n\n**Resource Usage:**\n- CPUs: 1\n- Memory: 10000 MB (9 GB)\n- Disk: 400 MB\n\n**Timing:**\n- Queue Date: 2024-01-15T14:30:22\n- Start Date: 2024-01-15T14:35:45\n\n**Files:**\n- Input: (default)\n- Output: (default)\n- Error: (default)\n- Log: (default)"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {
+                  "cluster_id": 1234567
+                },
+                "name": "get_job_status"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_client_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "get_job_history",
+      "conversation": [
+        {
+          "invocation_id": "eval-006-job-history",
+          "user_content": {
+            "parts": [
+              {
+                "text": "what's the history of job 1234567?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Job History for Cluster 1234567:\n\n**Current Status**: Running\n**Total Events**: 3\n\n**History Events:**\n1. **2024-01-15T14:30:22** - Job submitted (Status: Idle)\n2. **2024-01-15T14:35:45** - Job started (Status: Running)\n3. **2024-01-15T15:00:00** - Current status (Status: Running)\n\nHistory based on actual job timestamps from HTCondor"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {
+                  "cluster_id": 1234567,
+                  "limit": 50
+                },
+                "name": "get_job_history"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_client_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "get_utilization_stats",
+      "conversation": [
+        {
+          "invocation_id": "eval-007-utilization",
+          "user_content": {
+            "parts": [
+              {
+                "text": "show me utilization stats for the last 7 days"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Resource Utilization Statistics (Last 7 days):\n\n**Job Statistics:**\n- Total Jobs: 150\n- Completed Jobs: 142\n- Completion Rate: 94.7%\n\n**Resource Usage:**\n- Total CPU Time: 2,450 hours\n- Total Memory Usage: 15,680 MB\n- Average Completion Time: 2.3 hours\n\n**System Utilization:**\n- CPU Utilization: 78.5%\n- Memory Utilization: 65.2%\n- System Capacity: 32 CPUs, 24,576 MB Memory\n\nGenerated at: 2024-01-15T16:00:00"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {
+                  "time_range": "7d"
+                },
+                "name": "get_utilization_stats"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_client_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "save_job_report",
+      "conversation": [
+        {
+          "invocation_id": "eval-008-save-report",
+          "user_content": {
+            "parts": [
+              {
+                "text": "save a report for job 1234567"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "I've successfully saved a job report for cluster 1234567 as an artifact.\n\n**Report Details:**\n- Report Name: job_1234567_report\n- Artifact ID: artifact_001\n- Cluster ID: 1234567\n- Generated: 2024-01-15T16:00:00\n\nYou can load this report later using the load_job_report tool."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {
+                  "cluster_id": 1234567,
+                  "report_name": "job_1234567_report"
+                },
+                "name": "save_job_report"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_client_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "session_management_flow",
+      "conversation": [
+        {
+          "invocation_id": "eval-009-session-list",
+          "user_content": {
+            "parts": [
+              {
+                "text": "list all my sessions"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Here are all your sessions:\n\n**Session Summary:**\n- Total Sessions: 3\n- User ID: test_user\n\n**Active Sessions:**\n1. **Session ID**: d49e2c00-8d95-4d5a-83da-63da933e2c1f\n   - Created: 2024-01-15T10:00:00\n   - Last Activity: 2024-01-15T15:30:00\n   - Conversations: 5\n\n2. **Session ID**: e07b6c99-ac10-4656-bb9b-24d64e35b2bc\n   - Created: 2024-01-15T14:00:00\n   - Last Activity: 2024-01-15T15:45:00\n   - Conversations: 3\n\n3. **Session ID**: f92d34c6d-0a1b-452a-ba90-33af2838647a\n   - Created: 2024-01-15T15:00:00\n   - Last Activity: 2024-01-15T15:55:00\n   - Conversations: 2"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {},
+                "name": "list_user_sessions"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        },
+        {
+          "invocation_id": "eval-010-session-continue",
+          "user_content": {
+            "parts": [
+              {
+                "text": "can we go to this session d49e2c00-8d95-4d5a-83da-63da933e2c1f"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "I've successfully switched to session d49e2c00-8d95-4d5a-83da-63da933e2c1f.\n\n**Session Context:**\n- Session ID: d49e2c00-8d95-4d5a-83da-63da933e2c1f\n- User ID: test_user\n- Status: Active\n\n**Session History Summary:**\n- Total Interactions: 5\n- Tools Used: list_jobs (2), get_job_status (1), get_utilization_stats (1), save_job_report (1)\n- Jobs Referenced: [1234567, 1234568]\n- Last Activity: 2024-01-15T15:30:00\n\n**Previous Activity:**\nIn this session, you were working with job cluster 1234567 and had checked utilization statistics. You also saved a job report for cluster 1234567.\n\nHow can I help you continue with your HTCondor job management tasks?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {
+                  "session_id": "d49e2c00-8d95-4d5a-83da-63da933e2c1f"
+                },
+                "name": "continue_specific_session"
+              },
+              {
+                "args": {
+                  "session_id": "d49e2c00-8d95-4d5a-83da-63da933e2c1f"
+                },
+                "name": "get_session_history"
+              },
+              {
+                "args": {
+                  "session_id": "d49e2c00-8d95-4d5a-83da-63da933e2c1f"
+                },
+                "name": "get_session_summary"
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "htcondor_mcp_client_agent",
+        "user_id": "test_user",
+        "state": {}
+      }
+    }
+  ]
+} 

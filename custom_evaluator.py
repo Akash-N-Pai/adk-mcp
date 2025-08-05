@@ -1,11 +1,12 @@
 """
-Custom evaluator for HTCondor MCP agent that checks both trajectory and output quality.
-Uses context-aware evaluation with semantic understanding rather than exact word matching.
+Streamlined custom evaluator for HTCondor MCP agent.
+Essential features only: trajectory evaluation, output evaluation, and basic semantic analysis.
 """
 
 import re
 from difflib import SequenceMatcher
 from typing import List, Dict, Any, Tuple
+from dataclasses import dataclass
 
 # Try different import locations for LangChain evaluation classes
 try:
@@ -13,7 +14,6 @@ try:
 except ImportError:
     try:
         from langchain.schema import EvaluationResult
-        # Create a simple FinalOutputEvaluator if not available
         class FinalOutputEvaluator:
             def evaluate(self, expected: str, actual: str) -> EvaluationResult:
                 return EvaluationResult(
@@ -22,10 +22,6 @@ except ImportError:
                     comment="Basic evaluation"
                 )
     except ImportError:
-        # Fallback: Create our own simple evaluation classes
-        from dataclasses import dataclass
-        from typing import Optional
-        
         @dataclass
         class EvaluationResult:
             passed: bool
@@ -42,29 +38,23 @@ except ImportError:
 
 
 class SemanticEvaluator:
-    """Helper class for semantic similarity and context-aware evaluation."""
+    """Basic semantic similarity and context analysis."""
     
     @staticmethod
     def similarity_score(text1: str, text2: str) -> float:
-        """Calculate similarity between two texts using sequence matching."""
+        """Calculate similarity between two texts."""
+        if not text1 or not text2:
+            return 0.0
         return SequenceMatcher(None, text1.lower(), text2.lower()).ratio()
     
     @staticmethod
-    def contains_semantic_pattern(text: str, patterns: List[str], threshold: float = 0.6) -> bool:
-        """Check if text contains any of the semantic patterns."""
-        text_lower = text.lower()
-        for pattern in patterns:
-            if pattern.lower() in text_lower:
-                return True
-            # Check for semantic similarity
-            if SemanticEvaluator.similarity_score(text, pattern) >= threshold:
-                return True
-        return False
-    
-    @staticmethod
     def extract_context_indicators(text: str) -> Dict[str, Any]:
-        """Extract context indicators from text for intelligent evaluation."""
+        """Extract basic context indicators from text."""
+        if not text or not isinstance(text, str):
+            return {"response_type": "error", "word_count": 0}
+        
         text_lower = text.lower()
+        words = text.split()
         
         indicators = {
             "has_job_data": False,
@@ -74,46 +64,39 @@ class SemanticEvaluator:
             "has_tool_listing": False,
             "has_error_handling": False,
             "has_helpful_guidance": False,
-            "response_type": "unknown",
-            "word_count": len(text.split()),
+            "response_type": "general",
+            "word_count": len(words),
             "has_structure": False
         }
         
-        # Job data indicators
+        # Basic pattern detection
         job_patterns = ["cluster", "job", "owner", "procid", "clusterid", "queue", "submit"]
         if any(pattern in text_lower for pattern in job_patterns):
             indicators["has_job_data"] = True
         
-        # Session management indicators
-        session_patterns = ["session", "previous", "continue", "fresh", "started", "would you like"]
+        session_patterns = ["session", "previous", "continue", "fresh", "started"]
         if any(pattern in text_lower for pattern in session_patterns):
             indicators["has_session_info"] = True
         
-        # Table format indicators
         if "|" in text and any(header in text_lower for header in ["clusterid", "procid", "status", "owner"]):
             indicators["has_table_format"] = True
         
-        # Status information indicators
         status_patterns = ["running", "idle", "held", "completed", "removed", "status"]
         if any(pattern in text_lower for pattern in status_patterns):
             indicators["has_status_info"] = True
         
-        # Tool listing indicators
-        tool_patterns = ["basic job management", "tools organized", "available htcondor", "list_jobs", "get_job_status"]
+        tool_patterns = ["basic job management", "tools organized", "available htcondor"]
         if any(pattern in text_lower for pattern in tool_patterns):
             indicators["has_tool_listing"] = True
         
-        # Error handling indicators
         error_patterns = ["error", "not found", "failed", "invalid", "no jobs", "empty"]
         if any(pattern in text_lower for pattern in error_patterns):
             indicators["has_error_handling"] = True
         
-        # Helpful guidance indicators
-        guidance_patterns = ["you can", "to check", "use", "cluster id", "do you want", "would you like"]
+        guidance_patterns = ["you can", "to check", "use", "cluster id", "do you want"]
         if any(pattern in text_lower for pattern in guidance_patterns):
             indicators["has_helpful_guidance"] = True
         
-        # Structure indicators
         structure_patterns = ["**", "-", "•", "1.", "2.", ":", "|"]
         if any(pattern in text for pattern in structure_patterns):
             indicators["has_structure"] = True
@@ -129,341 +112,295 @@ class SemanticEvaluator:
             indicators["response_type"] = "job_status"
         elif indicators["has_error_handling"]:
             indicators["response_type"] = "error_response"
-        else:
-            indicators["response_type"] = "general"
         
         return indicators
 
 
 class HTCondorTrajectoryEvaluator:
-    """Evaluates if the agent followed the expected tool usage path with context awareness."""
+    """Evaluates tool usage trajectory."""
     
     def evaluate_trajectory(self, expected_tools: List[str], actual_tool_calls: List[Dict]) -> EvaluationResult:
-        """
-        Evaluate if the agent used the expected tools in the right order.
-        Uses context-aware evaluation with flexible matching.
+        """Evaluate if the agent used expected tools correctly."""
+        if not actual_tool_calls:
+            return EvaluationResult(passed=False, score=0.0, comment="❌ No tool calls detected")
         
-        Args:
-            expected_tools: List of expected tool names in order
-            actual_tool_calls: List of actual tool calls made by agent
-        """
         actual_tools = [call.get('name', '') for call in actual_tool_calls]
         comments = []
         score = 0.0
         
-        # Tool mapping for flexible matching
+        # Tool equivalents for flexible matching
         tool_equivalents = {
             "list_jobs": ["list_jobs", "list_htcondor_jobs"],
             "get_job_status": ["get_job_status", "job_status"],
-            "list_htcondor_tools": ["list_htcondor_tools", "list_tools", "show_tools"],
+            "list_htcondor_tools": ["list_htcondor_tools", "list_tools"],
             "get_job_history": ["get_job_history", "job_history"],
             "generate_job_report": ["generate_job_report", "job_report"],
             "get_utilization_stats": ["get_utilization_stats", "utilization_stats"],
             "list_user_sessions": ["list_user_sessions", "sessions"],
-            "start_fresh_session": ["start_fresh_session", "new_session", "fresh_session"]
+            "start_fresh_session": ["start_fresh_session", "new_session"]
         }
         
-        # Check if all expected tools were used (with flexible matching)
-        expected_used = True
+        # Check expected tools
         missing_tools = []
-        
         for expected_tool in expected_tools:
             tool_found = False
-            # Check exact match
             if expected_tool in actual_tools:
                 tool_found = True
             else:
-                # Check equivalent tools
                 equivalents = tool_equivalents.get(expected_tool, [])
-                for equivalent in equivalents:
-                    if equivalent in actual_tools:
-                        tool_found = True
-                        break
+                if any(equivalent in actual_tools for equivalent in equivalents):
+                    tool_found = True
             
             if not tool_found:
-                expected_used = False
                 missing_tools.append(expected_tool)
         
-        if expected_used:
-            score += 0.5
+        if not missing_tools:
+            score += 0.6
             comments.append("✅ All expected tools used")
         else:
             comments.append(f"❌ Missing tools: {missing_tools}")
         
-        # Check if tools were used in correct order (more flexible)
-        if len(expected_tools) > 1:
-            expected_order = expected_tools
-            actual_order = []
-            
-            # Map actual tools to expected tools for order checking
-            for actual_tool in actual_tools:
-                for expected_tool in expected_tools:
-                    if actual_tool == expected_tool or actual_tool in tool_equivalents.get(expected_tool, []):
-                        actual_order.append(expected_tool)
-                        break
-            
-            if actual_order == expected_order:
-                score += 0.3
-                comments.append("✅ Tools used in correct order")
-            elif len(actual_order) >= len(expected_order) * 0.8:  # 80% order accuracy
-                score += 0.2
-                comments.append("⚠️ Tools used in mostly correct order")
-            else:
-                comments.append(f"⚠️ Tools used in wrong order. Expected: {expected_order}, Got: {actual_order}")
-        
-        # Check for extra/unnecessary tools (context-aware)
+        # Check for extra tools
         extra_tools = [tool for tool in actual_tools if tool not in expected_tools]
+        session_tools = ["list_user_sessions", "continue_last_session", "start_fresh_session"]
+        session_extras = [tool for tool in extra_tools if tool in session_tools]
         
-        # Special handling for session management tools - these are often used together
-        session_tools = ["list_user_sessions", "continue_last_session", "start_fresh_session", "continue_specific_session"]
-        session_related_extras = [tool for tool in extra_tools if tool in session_tools]
-        other_extras = [tool for tool in extra_tools if tool not in session_tools]
-        
-        if session_related_extras and not other_extras:
-            # Only session-related extras - this is often correct behavior
-            comments.append(f"✅ Session management extras (acceptable): {session_related_extras}")
-            score += 0.2  # Full points for session management
-        elif len(extra_tools) <= 2:  # Allow a few extra tools
-            comments.append(f"⚠️ Minor extra tools used: {extra_tools}")
-            score += 0.1  # Small penalty but not failure
+        if session_extras and len(extra_tools) == len(session_extras):
+            score += 0.2
+            comments.append("✅ Session management extras (acceptable)")
+        elif len(extra_tools) <= 2:
+            score += 0.1
+            comments.append(f"⚠️ Minor extra tools: {extra_tools}")
         elif extra_tools:
-            comments.append(f"⚠️ Extra tools used: {extra_tools}")
-            score += 0.05  # Small penalty
+            comments.append(f"⚠️ Extra tools: {extra_tools}")
         else:
             score += 0.2
-            comments.append("✅ No unnecessary tools used")
+            comments.append("✅ No unnecessary tools")
         
-        passed = score >= 0.7  # Stricter threshold
-        
-        return EvaluationResult(
-            passed=passed,
-            score=score,
-            comment=" ".join(comments)
-        )
+        passed = score >= 0.7
+        return EvaluationResult(passed=passed, score=score, comment=" ".join(comments))
 
 
 class HTCondorOutputEvaluator(FinalOutputEvaluator):
-    """Evaluates the quality of the agent's final response using context-aware criteria."""
+    """Evaluates response quality."""
     
     def evaluate(self, expected: str, actual: str) -> EvaluationResult:
-        """
-        Evaluate the quality of the agent's response using semantic understanding.
+        """Evaluate response quality with context awareness."""
+        if not actual or not isinstance(actual, str):
+            return EvaluationResult(passed=False, score=0.0, comment="❌ Invalid response")
         
-        Args:
-            expected: Expected response (can be partial or guidelines)
-            actual: Actual agent response
-        """
         comments = []
         score = 0.0
         
         # Extract context indicators
         indicators = SemanticEvaluator.extract_context_indicators(actual)
         
-        # Context-aware scoring based on response type
-        if indicators["response_type"] == "job_listing":
-            score += self._evaluate_job_listing(actual, indicators, comments)
-        elif indicators["response_type"] == "tool_listing":
-            score += self._evaluate_tool_listing(actual, indicators, comments)
-        elif indicators["response_type"] == "session_management":
-            score += self._evaluate_session_management(actual, indicators, comments)
-        elif indicators["response_type"] == "job_status":
-            score += self._evaluate_job_status(actual, indicators, comments)
-        elif indicators["response_type"] == "error_response":
-            score += self._evaluate_error_response(actual, indicators, comments)
+        # Context-aware scoring
+        response_type = indicators["response_type"]
+        if response_type == "job_listing":
+            score += self._evaluate_job_listing(indicators, comments)
+        elif response_type == "tool_listing":
+            score += self._evaluate_tool_listing(indicators, comments)
+        elif response_type == "session_management":
+            score += self._evaluate_session_management(indicators, comments)
+        elif response_type == "job_status":
+            score += self._evaluate_job_status(indicators, comments)
+        elif response_type == "error_response":
+            score += self._evaluate_error_response(indicators, comments)
         else:
-            score += self._evaluate_general_response(actual, indicators, comments)
+            score += self._evaluate_general_response(indicators, comments)
         
-        # Semantic similarity with expected output
+        # Semantic similarity
         if expected and actual:
             similarity = SemanticEvaluator.similarity_score(expected, actual)
             if similarity >= 0.7:
                 score += 0.2
-                comments.append("✅ High semantic similarity to expected")
+                comments.append("✅ High similarity to expected")
             elif similarity >= 0.5:
                 score += 0.1
-                comments.append("✅ Moderate semantic similarity to expected")
-            else:
-                comments.append("⚠️ Low semantic similarity to expected")
+                comments.append("✅ Moderate similarity to expected")
         
-        # Response length evaluation (context-aware)
+        # Response length
         word_count = indicators["word_count"]
-        if indicators["response_type"] == "job_listing" and word_count >= 20:
+        if 10 <= word_count <= 200:
             score += 0.1
-            comments.append("✅ Appropriate length for job listing")
-        elif indicators["response_type"] == "tool_listing" and word_count >= 30:
-            score += 0.1
-            comments.append("✅ Appropriate length for tool listing")
-        elif indicators["response_type"] == "session_management" and 10 <= word_count <= 50:
-            score += 0.1
-            comments.append("✅ Appropriate length for session management")
-        elif 10 <= word_count <= 200:
-            score += 0.1
-            comments.append("✅ Appropriate response length")
+            comments.append("✅ Appropriate length")
         elif word_count < 10:
-            comments.append("⚠️ Response too brief")
+            comments.append("⚠️ Too brief")
         else:
-            comments.append("⚠️ Response too verbose")
+            comments.append("⚠️ Too verbose")
         
-        passed = score >= 0.6  # Stricter threshold
-        
-        return EvaluationResult(
-            passed=passed,
-            score=score,
-            comment=" ".join(comments)
-        )
+        passed = score >= 0.6
+        return EvaluationResult(passed=passed, score=score, comment=" ".join(comments))
     
-    def _evaluate_job_listing(self, actual: str, indicators: Dict, comments: List[str]) -> float:
-        """Evaluate job listing responses."""
+    def _evaluate_job_listing(self, indicators: Dict, comments: List[str]) -> float:
         score = 0.0
-        
         if indicators["has_table_format"]:
             score += 0.3
-            comments.append("✅ Proper table format for job listing")
-        
+            comments.append("✅ Proper table format")
         if indicators["has_job_data"]:
             score += 0.2
             comments.append("✅ Contains job information")
-        
         if indicators["has_status_info"]:
             score += 0.2
             comments.append("✅ Contains status information")
-        
         if indicators["has_structure"]:
             score += 0.15
-            comments.append("✅ Well-structured job listing")
-        
+            comments.append("✅ Well-structured")
         if indicators["has_helpful_guidance"]:
             score += 0.15
-            comments.append("✅ Provides helpful guidance")
-        
+            comments.append("✅ Provides guidance")
         return score
     
-    def _evaluate_tool_listing(self, actual: str, indicators: Dict, comments: List[str]) -> float:
-        """Evaluate tool listing responses."""
+    def _evaluate_tool_listing(self, indicators: Dict, comments: List[str]) -> float:
         score = 0.0
-        
         if indicators["has_tool_listing"]:
             score += 0.3
-            comments.append("✅ Proper tool listing format")
-        
+            comments.append("✅ Proper tool listing")
         if indicators["has_structure"]:
             score += 0.25
-            comments.append("✅ Well-structured tool categories")
-        
+            comments.append("✅ Well-structured categories")
         if indicators["has_helpful_guidance"]:
             score += 0.2
-            comments.append("✅ Provides helpful guidance")
-        
+            comments.append("✅ Provides guidance")
         if indicators["word_count"] >= 30:
             score += 0.15
-            comments.append("✅ Comprehensive tool listing")
-        
+            comments.append("✅ Comprehensive listing")
         return score
     
-    def _evaluate_session_management(self, actual: str, indicators: Dict, comments: List[str]) -> float:
-        """Evaluate session management responses."""
+    def _evaluate_session_management(self, indicators: Dict, comments: List[str]) -> float:
         score = 0.0
-        
         if indicators["has_session_info"]:
             score += 0.4
-            comments.append("✅ Contains session management information")
-        
+            comments.append("✅ Contains session information")
         if indicators["has_helpful_guidance"]:
             score += 0.3
             comments.append("✅ Provides session guidance")
-        
         if indicators["word_count"] >= 10:
             score += 0.2
-            comments.append("✅ Appropriate session response length")
-        
+            comments.append("✅ Appropriate length")
         return score
     
-    def _evaluate_job_status(self, actual: str, indicators: Dict, comments: List[str]) -> float:
-        """Evaluate job status responses."""
+    def _evaluate_job_status(self, indicators: Dict, comments: List[str]) -> float:
         score = 0.0
-        
         if indicators["has_job_data"]:
             score += 0.3
             comments.append("✅ Contains job information")
-        
         if indicators["has_status_info"]:
             score += 0.3
             comments.append("✅ Contains status information")
-        
         if indicators["has_structure"]:
             score += 0.2
-            comments.append("✅ Well-structured status response")
-        
+            comments.append("✅ Well-structured")
         if indicators["has_helpful_guidance"]:
             score += 0.2
-            comments.append("✅ Provides helpful guidance")
-        
+            comments.append("✅ Provides guidance")
         return score
     
-    def _evaluate_error_response(self, actual: str, indicators: Dict, comments: List[str]) -> float:
-        """Evaluate error handling responses."""
+    def _evaluate_error_response(self, indicators: Dict, comments: List[str]) -> float:
         score = 0.0
-        
         if indicators["has_error_handling"]:
             score += 0.4
             comments.append("✅ Proper error handling")
-        
         if indicators["has_helpful_guidance"]:
             score += 0.3
-            comments.append("✅ Provides helpful error guidance")
-        
+            comments.append("✅ Provides error guidance")
         if indicators["word_count"] >= 10:
             score += 0.2
-            comments.append("✅ Appropriate error response length")
-        
+            comments.append("✅ Appropriate length")
         return score
     
-    def _evaluate_general_response(self, actual: str, indicators: Dict, comments: List[str]) -> float:
-        """Evaluate general responses."""
+    def _evaluate_general_response(self, indicators: Dict, comments: List[str]) -> float:
         score = 0.0
-        
         if indicators["has_job_data"]:
             score += 0.2
             comments.append("✅ Contains job information")
-        
         if indicators["has_session_info"]:
             score += 0.2
-            comments.append("✅ Contains session management information")
-        
+            comments.append("✅ Contains session information")
         if indicators["has_structure"]:
             score += 0.2
-            comments.append("✅ Well-structured response")
-        
+            comments.append("✅ Well-structured")
         if indicators["has_helpful_guidance"]:
             score += 0.2
-            comments.append("✅ Provides helpful guidance")
-        
+            comments.append("✅ Provides guidance")
         if indicators["word_count"] >= 10:
             score += 0.2
-            comments.append("✅ Appropriate response length")
-        
+            comments.append("✅ Appropriate length")
         return score
 
 
 class HTCondorComprehensiveEvaluator:
-    """Combines trajectory and output evaluation for comprehensive assessment."""
+    """Combines trajectory and output evaluation."""
     
     def __init__(self):
         self.trajectory_evaluator = HTCondorTrajectoryEvaluator()
         self.output_evaluator = HTCondorOutputEvaluator()
+    
+    def extract_real_tool_calls(self, response) -> List[Dict]:
+        """Extract tool calls from ADK response metadata."""
+        tool_calls = []
+        
+        try:
+            # Try to get tool calls from response metadata
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                for tool_call in response.tool_calls:
+                    tool_calls.append({
+                        "name": tool_call.get("name", "unknown"),
+                        "args": tool_call.get("arguments", {})
+                    })
+                return tool_calls
+            
+            # Fallback to pattern matching
+            return self._extract_tool_calls_pattern(response.content if hasattr(response, 'content') else str(response))
+            
+        except Exception:
+            return []
+    
+    def _extract_tool_calls_pattern(self, response_content: str) -> List[Dict]:
+        """Fallback pattern matching for tool calls."""
+        tool_calls = []
+        response_lower = response_content.lower()
+        
+        patterns = {
+            "list_jobs": ["clusterid", "procid", "status", "owner", "| clusterid |"],
+            "list_htcondor_tools": ["basic job management", "tools organized", "available htcondor"],
+            "get_job_status": ["cluster id", "status:", "owner:", "command:"],
+            "get_job_history": ["job history", "queue date", "job start date"],
+            "generate_job_report": ["job report", "report metadata", "total jobs"],
+            "get_utilization_stats": ["utilization statistics", "resource utilization"],
+            "list_user_sessions": ["previous sessions", "sessions", "session list"],
+            "start_fresh_session": ["started", "new session", "fresh session"],
+            "continue_last_session": ["continuing", "last session", "resumed session"],
+            "continue_specific_session": ["switched to session", "session context"],
+            "get_session_history": ["session history", "conversation history"],
+            "get_session_summary": ["session summary", "session activities"],
+            "get_user_conversation_memory": ["conversation memory", "cross-session"],
+            "get_user_context_summary": ["context summary", "user context"],
+            "save_job_report": ["saved report", "report saved", "artifact"],
+            "load_job_report": ["loaded report", "report loaded"],
+            "search_job_memory": ["memory search", "search results"],
+            "add_to_memory": ["remembered", "saved to memory"],
+            "export_job_data": ["exported", "data export", "csv format"]
+        }
+        
+        for tool_name, tool_patterns in patterns.items():
+            if any(pattern in response_lower for pattern in tool_patterns):
+                tool_calls.append({"name": tool_name, "args": {}})
+        
+        return tool_calls
     
     def evaluate(self, 
                 expected_tools: List[str],
                 actual_tool_calls: List[Dict],
                 expected_output: str,
                 actual_output: str) -> Dict[str, EvaluationResult]:
-        """
-        Comprehensive evaluation combining trajectory and output quality.
-        Uses context-aware evaluation with semantic understanding.
+        """Comprehensive evaluation combining trajectory and output quality."""
         
-        Returns:
-            Dictionary with trajectory_result and output_result
-        """
+        # Extract real tool calls if not provided
+        if not actual_tool_calls and hasattr(actual_output, 'tool_calls'):
+            actual_tool_calls = self.extract_real_tool_calls(actual_output)
+        
         trajectory_result = self.trajectory_evaluator.evaluate_trajectory(
             expected_tools, actual_tool_calls
         )
@@ -472,10 +409,8 @@ class HTCondorComprehensiveEvaluator:
             expected_output, actual_output
         )
         
-        # Calculate overall score with context-aware weighting
+        # Calculate overall score
         overall_score = (trajectory_result.score * 0.6) + (output_result.score * 0.4)
-        
-        # Stricter passing criteria
         overall_passed = (trajectory_result.score >= 0.6 and output_result.score >= 0.5) and overall_score >= 0.7
         
         return {

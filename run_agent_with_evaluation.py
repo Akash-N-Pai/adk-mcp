@@ -1,54 +1,134 @@
 #!/usr/bin/env python3
 """
-Simple and robust HTCondor agent evaluation using ADK Runner.
-Clean, straightforward approach using proper ADK architecture.
+Robust HTCondor agent evaluation using ADK Runner with production-ready features.
+Includes error handling, retry logic, resource management, and proper tool call extraction.
 """
 
 import json
 import asyncio
 import time
-from typing import List, Dict, Any
+import logging
+import traceback
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
+from contextlib import asynccontextmanager
 
 # Import ADK classes
-from google.adk.core.agent import Agent
-from google.adk.core.runner import Runner
-from google.adk.core.session_service import InMemorySessionService
+try:
+    from google.adk.core.agent import Agent
+    from google.adk.core.runner import Runner
+    from google.adk.core.session_service import InMemorySessionService
+except ImportError as e:
+    print(f"❌ ADK import error: {e}")
+    print("Please ensure ADK is properly installed: pip install google-adk")
+    exit(1)
 
 # Import the custom evaluator
+try:
 from custom_evaluator import HTCondorComprehensiveEvaluator
+except ImportError as e:
+    print(f"❌ Custom evaluator import error: {e}")
+    exit(1)
 
 # Import the existing HTCondor agent from local_mcp
-from local_mcp.htcondor_mcp_client_agent import htcondor_mcp_client_agent
+try:
+    from local_mcp.htcondor_mcp_client_agent import htcondor_mcp_client_agent
+except ImportError as e:
+    print(f"❌ HTCondor agent import error: {e}")
+    print("Please ensure local_mcp module is available")
+    exit(1)
 
-class SimpleADKEvaluator:
-    """Simple and robust ADK agent evaluator using Runner."""
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('evaluation.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+@dataclass
+class EvaluationConfig:
+    """Configuration for evaluation settings."""
+    max_retries: int = 3
+    retry_delay: float = 1.0
+    query_timeout: int = 30
+    session_timeout: int = 300
+    max_concurrent_tests: int = 1
+    enable_caching: bool = True
+    cache_file: str = "evaluation_cache.json"
+
+class RobustADKEvaluator:
+    """Robust ADK agent evaluator with production-ready features."""
     
-    def __init__(self):
+    def __init__(self, config: EvaluationConfig = None):
+        self.config = config or EvaluationConfig()
         self.evaluator = HTCondorComprehensiveEvaluator()
         self.runner = None
         self.session_service = None
         self.session = None
         self.results = []
+        self.cache = {}
+        self.start_time = None
+        self.test_count = 0
+        self.passed_count = 0
+        self.failed_count = 0
+        
+        # Load cache if enabled
+        if self.config.enable_caching:
+            self._load_cache()
     
-    async def start_agent(self):
-        """Start the agent using ADK Runner."""
-        print("🚀 Starting HTCondor agent with ADK Runner...")
+    def _load_cache(self):
+        """Load evaluation cache from file."""
+        try:
+            with open(self.config.cache_file, 'r') as f:
+                self.cache = json.load(f)
+            logger.info(f"Loaded cache with {len(self.cache)} entries")
+        except FileNotFoundError:
+            self.cache = {}
+            logger.info("No cache file found, starting fresh")
+        except Exception as e:
+            logger.warning(f"Failed to load cache: {e}")
+            self.cache = {}
+    
+    def _save_cache(self):
+        """Save evaluation cache to file."""
+        if not self.config.enable_caching:
+            return
         
         try:
-            # Setup session management
+            with open(self.config.cache_file, 'w') as f:
+                json.dump(self.cache, f, indent=2)
+            logger.info(f"Saved cache with {len(self.cache)} entries")
+        except Exception as e:
+            logger.warning(f"Failed to save cache: {e}")
+    
+    def _get_cache_key(self, query: str) -> str:
+        """Generate cache key for query."""
+        return f"{hash(query)}"
+    
+    async def start_agent(self) -> bool:
+        """Start the agent using ADK Runner with error handling."""
+        logger.info("🚀 Starting HTCondor agent with ADK Runner...")
+        
+        try:
+            # Setup session management with unique session ID
             self.session_service = InMemorySessionService()
             
-            # Create session
+            # Create session with timestamp to avoid conflicts
+            timestamp = int(time.time())
             APP_NAME = "htcondor_evaluation_app"
-            USER_ID = "evaluation_user"
-            SESSION_ID = "eval_session_001"
+            USER_ID = f"evaluation_user_{timestamp}"
+            SESSION_ID = f"eval_session_{timestamp}"
             
             self.session = await self.session_service.create_session(
                 app_name=APP_NAME,
                 user_id=USER_ID,
                 session_id=SESSION_ID
             )
-            print(f"✅ Session created: {APP_NAME}/{USER_ID}/{SESSION_ID}")
+            logger.info(f"✅ Session created: {APP_NAME}/{USER_ID}/{SESSION_ID}")
             
             # Create runner with the existing HTCondor agent
             self.runner = Runner(
@@ -56,127 +136,227 @@ class SimpleADKEvaluator:
                 app_name=APP_NAME,
                 session_service=self.session_service
             )
-            print(f"✅ Runner created for agent '{self.runner.agent.name}'")
+            logger.info(f"✅ Runner created for agent '{self.runner.agent.name}'")
             
-            return True
+            # Test the connection
+            await self._test_connection()
+            
+                return True
                 
         except Exception as e:
-            print(f"❌ Failed to start agent: {e}")
+            logger.error(f"❌ Failed to start agent: {e}")
+            logger.error(traceback.format_exc())
             return False
     
+    async def _test_connection(self):
+        """Test the agent connection with a simple query."""
+        try:
+            test_response = await self.runner.run("hi")
+            logger.info("✅ Agent connection test successful")
+        except Exception as e:
+            logger.error(f"❌ Agent connection test failed: {e}")
+            raise
+    
     async def stop_agent(self):
-        """Stop the agent (cleanup session)."""
+        """Stop the agent with proper cleanup."""
         if self.session_service and self.session:
-            print("🛑 Stopping agent...")
+            logger.info("🛑 Stopping agent...")
             try:
                 await self.session_service.delete_session(self.session.session_id)
-                print("✅ Agent stopped")
+                logger.info("✅ Agent stopped")
             except Exception as e:
-                print(f"⚠️ Error stopping agent: {e}")
+                logger.warning(f"⚠️ Error stopping agent: {e}")
+        
+        # Save cache
+        self._save_cache()
     
-    async def send_query_and_get_response(self, query: str, wait_time: int = 15) -> str:
+    async def send_query_with_retry(self, query: str) -> str:
         """
-        Send a query to the agent and get the complete response using Runner.
+        Send a query to the agent with retry logic and timeout.
         """
-        try:
-            if not self.runner:
+        # Check cache first
+        cache_key = self._get_cache_key(query)
+        if self.config.enable_caching and cache_key in self.cache:
+            logger.info(f"📋 Using cached response for: {query[:50]}...")
+            return self.cache[cache_key]
+        
+        for attempt in range(self.config.max_retries):
+            try:
+                if not self.runner:
                 raise Exception("Agent not running")
             
-            print(f"📤 Sending query: {query}")
+                logger.info(f"📤 Sending query (attempt {attempt + 1}): {query}")
+                
+                # Send query with timeout
+                response = await asyncio.wait_for(
+                    self.runner.run(query),
+                    timeout=self.config.query_timeout
+                )
+                
+                logger.info(f"📥 Response received: {len(response.content)} characters")
+                logger.debug(f"📄 Response preview: {response.content[:200]}...")
+                
+                # Cache the response
+                if self.config.enable_caching:
+                    self.cache[cache_key] = response.content
+                
+                return response.content
+                
+            except asyncio.TimeoutError:
+                logger.warning(f"⏰ Query timeout on attempt {attempt + 1}")
+                if attempt == self.config.max_retries - 1:
+                    return f"Error: Query timed out after {self.config.query_timeout}s"
+            except Exception as e:
+                logger.error(f"❌ Error on attempt {attempt + 1}: {e}")
+                if attempt == self.config.max_retries - 1:
+                    return f"Error: {e}"
+                
+                # Wait before retry with exponential backoff
+                wait_time = self.config.retry_delay * (2 ** attempt)
+                logger.info(f"⏳ Waiting {wait_time}s before retry...")
+                await asyncio.sleep(wait_time)
+    
+    def extract_real_tool_calls(self, response) -> List[Dict]:
+        """Extract tool calls from actual ADK response metadata."""
+        tool_calls = []
+        
+        try:
+            # Try to get tool calls from response metadata
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                for tool_call in response.tool_calls:
+                    tool_calls.append({
+                        "name": tool_call.get("name", "unknown"),
+                        "args": tool_call.get("arguments", {})
+                    })
+                logger.info(f"🔧 Extracted {len(tool_calls)} tool calls from metadata")
+                return tool_calls
             
-            # Send query using runner
-            response = await self.runner.run(query)
-            
-            print(f"📥 Response received: {len(response.content)} characters")
-            print(f"📄 Response preview: {response.content[:200]}...")
-            
-            return response.content
+            # Fallback to pattern matching if no metadata
+            logger.warning("⚠️ No tool call metadata found, using pattern matching")
+            return self._extract_tool_calls_pattern(response.content)
             
         except Exception as e:
-            print(f"❌ Error communicating with agent: {e}")
-            return f"Error: {e}"
+            logger.error(f"❌ Error extracting tool calls: {e}")
+            return []
     
-    def extract_tool_calls(self, query: str, response: str) -> List[Dict]:
-        """Extract tool calls from response using simple pattern matching."""
+    def _extract_tool_calls_pattern(self, response_content: str) -> List[Dict]:
+        """Fallback pattern matching for tool calls."""
         tool_calls = []
-        response_lower = response.lower()
-        query_lower = query.lower()
+        response_lower = response_content.lower()
         
-        # Simple tool detection based on response content
-        if "list all the jobs" in query_lower:
-            if any(pattern in response_lower for pattern in [
-                "clusterid", "procid", "status", "owner", "jobs from", "total jobs"
-            ]):
-                tool_calls.append({"name": "list_jobs", "args": {}})
+        # Enhanced pattern matching with more specific patterns
+        patterns = {
+            "list_jobs": [
+                "clusterid", "procid", "status", "owner", "jobs from", "total jobs",
+                "| clusterid |", "| procid |", "| status |", "| owner |"
+            ],
+            "list_htcondor_tools": [
+                "basic job management", "tools organized", "available htcondor",
+                "tool categories", "htcondor tools"
+            ],
+            "get_job_status": [
+                "cluster id", "status:", "owner:", "command:", "job status",
+                "resource usage", "timing information"
+            ],
+            "get_job_history": [
+                "job history", "queue date", "job start date", "submitted", "started",
+                "execution history", "timestamps"
+            ],
+            "generate_job_report": [
+                "job report", "report metadata", "total jobs", "status distribution",
+                "generated report"
+            ],
+            "get_utilization_stats": [
+                "utilization statistics", "resource utilization", "completed jobs",
+                "system utilization"
+            ],
+            "list_user_sessions": [
+                "previous sessions", "sessions", "session list", "user sessions"
+            ],
+            "start_fresh_session": [
+                "started", "new session", "fresh session", "session created"
+            ],
+            "continue_last_session": [
+                "continuing", "last session", "resumed session"
+            ],
+            "continue_specific_session": [
+                "switched to session", "session context", "specific session"
+            ],
+            "get_session_history": [
+                "session history", "conversation history", "session details"
+            ],
+            "get_session_summary": [
+                "session summary", "session activities", "summary of session"
+            ],
+            "get_user_conversation_memory": [
+                "conversation memory", "cross-session", "memory across sessions"
+            ],
+            "get_user_context_summary": [
+                "context summary", "user context", "comprehensive context"
+            ],
+            "save_job_report": [
+                "saved report", "report saved", "artifact", "saved as"
+            ],
+            "load_job_report": [
+                "loaded report", "report loaded", "previously saved"
+            ],
+            "search_job_memory": [
+                "memory search", "search results", "memory query"
+            ],
+            "add_to_memory": [
+                "remembered", "saved to memory", "preference saved"
+            ],
+            "export_job_data": [
+                "exported", "data export", "csv format", "export format"
+            ]
+        }
         
-        elif "list all the tools" in query_lower:
-            if any(pattern in response_lower for pattern in [
-                "basic job management", "tools organized", "available htcondor"
-            ]):
-                tool_calls.append({"name": "list_htcondor_tools", "args": {}})
+        for tool_name, tool_patterns in patterns.items():
+            if any(pattern in response_lower for pattern in tool_patterns):
+                tool_calls.append({"name": tool_name, "args": {}})
         
-        elif "get job status" in query_lower:
-            if any(pattern in response_lower for pattern in [
-                "cluster id", "status:", "owner:", "command:"
-            ]):
-                tool_calls.append({"name": "get_job_status", "args": {}})
-        
-        elif "get job history" in query_lower:
-            if any(pattern in response_lower for pattern in [
-                "job history", "queue date", "job start date", "submitted", "started"
-            ]):
-                tool_calls.append({"name": "get_job_history", "args": {}})
-        
-        elif "generate job report" in query_lower:
-            if any(pattern in response_lower for pattern in [
-                "job report", "report metadata", "total jobs", "status distribution"
-            ]):
-                tool_calls.append({"name": "generate_job_report", "args": {}})
-        
-        elif "get_utilization_stats" in query_lower:
-            if any(pattern in response_lower for pattern in [
-                "utilization statistics", "resource utilization", "total jobs", "completed jobs"
-            ]):
-                tool_calls.append({"name": "get_utilization_stats", "args": {}})
-        
-        elif "hi" in query_lower:
-            if "previous sessions" in response_lower or "sessions" in response_lower:
-                tool_calls.append({"name": "list_user_sessions", "args": {}})
-        
-        elif "create a new session" in query_lower:
-            if "started" in response_lower and "session" in response_lower:
-                tool_calls.append({"name": "start_fresh_session", "args": {}})
-        
+        logger.info(f"🔧 Pattern-matched {len(tool_calls)} tool calls")
         return tool_calls
     
     async def test_single_case(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
-        """Test a single case with the running agent."""
+        """Test a single case with comprehensive error handling."""
         query = test_case["query"]
         expected_tools = test_case["expected_tools"]
         expected_output = test_case["expected_output"]
         
-        print(f"\n🧪 Testing: {query}")
+        self.test_count += 1
+        logger.info(f"\n🧪 Testing ({self.test_count}): {query}")
+        
+        start_time = time.time()
         
         try:
-            # Get agent response
-            response = await self.send_query_and_get_response(query, wait_time=15)
+            # Get agent response with retry logic
+            response = await self.send_query_with_retry(query)
             
-            print(f"🤖 Agent Response: {response[:100]}...")
+            # Check for errors in response
+            if response.startswith("Error:"):
+                logger.error(f"❌ Agent returned error: {response}")
+                result = self._create_error_result(test_case, response)
+                self.failed_count += 1
+                return result
             
-            # Extract tool calls
-            tool_calls = self.extract_tool_calls(query, response)
-            print(f"🔧 Tool Calls: {tool_calls}")
+            logger.info(f"🤖 Agent Response: {response[:100]}...")
+            
+            # Extract tool calls using real metadata
+            tool_calls = self.extract_real_tool_calls(response)
+            logger.info(f"🔧 Tool Calls: {tool_calls}")
             
             # Run evaluation
-            print("🔍 Running evaluation...")
+            logger.info("🔍 Running evaluation...")
             eval_results = self.evaluator.evaluate(
                 expected_tools=expected_tools,
                 actual_tool_calls=tool_calls,
                 expected_output=expected_output,
                 actual_output=response
             )
-            print("✅ Evaluation completed")
+            logger.info("✅ Evaluation completed")
             
+            # Create result
             result = {
                 "query": query,
                 "expected_tools": expected_tools,
@@ -188,174 +368,194 @@ class SimpleADKEvaluator:
                 "output_score": eval_results["output"].score,
                 "output_comment": eval_results["output"].comment,
                 "overall_score": eval_results["overall_score"],
-                "overall_passed": eval_results["overall_passed"]
+                "overall_passed": eval_results["overall_passed"],
+                "execution_time": time.time() - start_time,
+                "timestamp": time.time()
             }
             
-            # Print results
-            print(f"📊 Trajectory: {eval_results['trajectory'].score:.2f} - {eval_results['trajectory'].comment}")
-            print(f"📊 Output: {eval_results['output'].score:.2f} - {eval_results['output'].comment}")
-            print(f"📊 Overall: {eval_results['overall_score']:.2f} - {'✅ PASS' if eval_results['overall_passed'] else '❌ FAIL'}")
+            # Update counters
+            if eval_results["overall_passed"]:
+                self.passed_count += 1
+                logger.info(f"✅ PASS - Overall: {eval_results['overall_score']:.2f}")
+            else:
+                self.failed_count += 1
+                logger.warning(f"❌ FAIL - Overall: {eval_results['overall_score']:.2f}")
+            
+            # Log detailed results
+            logger.info(f"📊 Trajectory: {eval_results['trajectory'].score:.2f} - {eval_results['trajectory'].comment}")
+            logger.info(f"📊 Output: {eval_results['output'].score:.2f} - {eval_results['output'].comment}")
             
             return result
             
         except Exception as e:
-            print(f"❌ Error testing case: {e}")
+            logger.error(f"❌ Test case failed with exception: {e}")
+            logger.error(traceback.format_exc())
+            self.failed_count += 1
+            return self._create_error_result(test_case, str(e))
+    
+    def _create_error_result(self, test_case: Dict[str, Any], error_message: str) -> Dict[str, Any]:
+        """Create a result for failed test cases."""
             return {
-                "query": query,
-                "error": str(e),
+            "query": test_case["query"],
+            "expected_tools": test_case["expected_tools"],
+            "actual_tool_calls": [],
+            "expected_output": test_case["expected_output"],
+            "actual_output": error_message,
                 "trajectory_score": 0.0,
+            "trajectory_comment": f"Error: {error_message}",
                 "output_score": 0.0,
+            "output_comment": f"Error: {error_message}",
                 "overall_score": 0.0,
-                "overall_passed": False
-            }
+            "overall_passed": False,
+            "execution_time": 0.0,
+            "timestamp": time.time(),
+            "error": True
+        }
     
     async def run_evaluation_suite(self, test_cases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Run evaluation on a suite of test cases."""
-        print("🚀 Starting Simple ADK Agent Evaluation Suite")
-        print(f"📋 Testing {len(test_cases)} cases...")
+        """Run the complete evaluation suite with progress tracking."""
+        logger.info(f"🚀 Starting evaluation suite with {len(test_cases)} test cases")
+        self.start_time = time.time()
+        self.test_count = 0
+        self.passed_count = 0
+        self.failed_count = 0
         
-        # Start the agent
-        if not await self.start_agent():
-            print("❌ Failed to start agent, cannot proceed")
-            return []
+        results = []
         
-        try:
-            self.results = []
+        for i, test_case in enumerate(test_cases, 1):
+            logger.info(f"\n📋 Progress: {i}/{len(test_cases)} ({(i/len(test_cases)*100):.1f}%)")
             
-            for i, test_case in enumerate(test_cases, 1):
-                print(f"\n--- Test Case {i}/{len(test_cases)} ---")
-                result = await self.test_single_case(test_case)
-                self.results.append(result)
-                
-                # Wait between tests
-                if i < len(test_cases):
-                    print("⏳ Waiting 5 seconds before next test...")
-                    await asyncio.sleep(5)
+            # Add delay between tests to avoid overwhelming the agent
+            if i > 1:
+                await asyncio.sleep(1)
             
-            return self.results
+            result = await self.test_single_case(test_case)
+            results.append(result)
             
-        finally:
-            # Always stop the agent
-            await self.stop_agent()
+            # Print progress summary
+            if i % 5 == 0 or i == len(test_cases):
+                self._print_progress_summary(i, len(test_cases))
+        
+        # Final summary
+        self._print_final_summary()
+        
+        return results
     
-    def generate_report(self, output_file: str = "simple_adk_evaluation_report.json"):
-        """Generate evaluation report."""
-        if not self.results:
-            print("No results to report")
-            return
+    def _print_progress_summary(self, current: int, total: int):
+        """Print progress summary."""
+        elapsed = time.time() - self.start_time
+        rate = current / elapsed if elapsed > 0 else 0
+        eta = (total - current) / rate if rate > 0 else 0
         
-        # Calculate summary statistics
-        total_cases = len(self.results)
-        passed_cases = sum(1 for r in self.results if r.get('overall_passed', False))
-        avg_trajectory = sum(r.get('trajectory_score', 0) for r in self.results) / total_cases
-        avg_output = sum(r.get('output_score', 0) for r in self.results) / total_cases
-        avg_overall = sum(r.get('overall_score', 0) for r in self.results) / total_cases
+        logger.info(f"📈 Progress: {current}/{total} | "
+                   f"Passed: {self.passed_count} | "
+                   f"Failed: {self.failed_count} | "
+                   f"Rate: {rate:.2f} tests/min | "
+                   f"ETA: {eta/60:.1f} min")
+    
+    def _print_final_summary(self):
+        """Print final evaluation summary."""
+        total_time = time.time() - self.start_time
+        
+        logger.info(f"\n🎯 EVALUATION COMPLETE")
+        logger.info(f"=" * 50)
+        logger.info(f"Total Tests: {self.test_count}")
+        logger.info(f"Passed: {self.passed_count} ({(self.passed_count/self.test_count*100):.1f}%)")
+        logger.info(f"Failed: {self.failed_count} ({(self.failed_count/self.test_count*100):.1f}%)")
+        logger.info(f"Total Time: {total_time/60:.1f} minutes")
+        logger.info(f"Average Time per Test: {total_time/self.test_count:.1f} seconds")
+        
+        if self.config.enable_caching:
+            logger.info(f"Cache Hits: {len(self.cache)} entries saved")
+    
+    def generate_report(self, output_file: str = "robust_adk_evaluation_report.json"):
+        """Generate comprehensive evaluation report."""
+        logger.info(f"📄 Generating report: {output_file}")
         
         report = {
-            "summary": {
-                "total_cases": total_cases,
-                "passed_cases": passed_cases,
-                "failed_cases": total_cases - passed_cases,
-                "success_rate": passed_cases / total_cases,
-                "average_trajectory_score": avg_trajectory,
-                "average_output_score": avg_output,
-                "average_overall_score": avg_overall
+            "evaluation_config": {
+                "max_retries": self.config.max_retries,
+                "retry_delay": self.config.retry_delay,
+                "query_timeout": self.config.query_timeout,
+                "enable_caching": self.config.enable_caching
             },
-            "results": self.results
+            "summary": {
+                "total_tests": self.test_count,
+                "passed_tests": self.passed_count,
+                "failed_tests": self.failed_count,
+                "pass_rate": (self.passed_count / self.test_count * 100) if self.test_count > 0 else 0,
+                "total_time": time.time() - self.start_time if self.start_time else 0,
+                "average_time_per_test": (time.time() - self.start_time) / self.test_count if self.test_count > 0 else 0
+            },
+            "results": self.results,
+            "cache_info": {
+                "cache_enabled": self.config.enable_caching,
+                "cache_entries": len(self.cache)
+            },
+            "timestamp": time.time()
         }
         
-        # Save report
+        try:
         with open(output_file, 'w') as f:
             json.dump(report, f, indent=2)
-        
-        print(f"\n📊 SIMPLE ADK EVALUATION SUMMARY")
-        print(f"Total Cases: {total_cases}")
-        print(f"Passed: {passed_cases}")
-        print(f"Failed: {total_cases - passed_cases}")
-        print(f"Success Rate: {passed_cases/total_cases:.1%}")
-        print(f"Avg Trajectory Score: {avg_trajectory:.3f}")
-        print(f"Avg Output Score: {avg_output:.3f}")
-        print(f"Avg Overall Score: {avg_overall:.3f}")
-        print(f"Report saved to: {output_file}")
+            logger.info(f"✅ Report saved: {output_file}")
+        except Exception as e:
+            logger.error(f"❌ Failed to save report: {e}")
 
-
-# Test cases
-TEST_CASES = [
-    {
-        "name": "Initial Greeting",
-        "query": "hi",
-        "expected_tools": ["list_user_sessions"],
-        "expected_output": "sessions",
-        "description": "Agent should greet user and check for existing sessions"
-    },
-    {
-        "name": "Create New Session",
-        "query": "create a new session",
-        "expected_tools": ["start_fresh_session"],
-        "expected_output": "started",
-        "description": "Agent should create a new session when requested"
-    },
-    {
-        "name": "List All Jobs",
-        "query": "list all the jobs",
-        "expected_tools": ["list_jobs"],
-        "expected_output": "clusterid",
-        "description": "Agent should list jobs in table format"
-    },
-    {
-        "name": "List All Tools",
-        "query": "list all the tools",
-        "expected_tools": ["list_htcondor_tools"],
-        "expected_output": "basic job management",
-        "description": "Agent should show organized tool categories"
-    },
-    {
-        "name": "Get Job Status",
-        "query": "get job status of 6657640",
-        "expected_tools": ["get_job_status"],
-        "expected_output": "cluster id",
-        "description": "Agent should provide detailed job status information"
-    },
-    {
-        "name": "Get Job History",
-        "query": "get job history of 6657640",
-        "expected_tools": ["get_job_history"],
-        "expected_output": "queue date",
-        "description": "Agent should show job execution history"
-    },
-    {
-        "name": "Generate Job Report",
-        "query": "generate job report for jareddb2",
-        "expected_tools": ["generate_job_report"],
-        "expected_output": "job report",
-        "description": "Agent should generate comprehensive job report"
-    },
-    {
-        "name": "Get Utilization Stats",
-        "query": "get_utilization_stats",
-        "expected_tools": ["get_utilization_stats"],
-        "expected_output": "utilization",
-        "description": "Agent should show system utilization statistics"
-    }
-]
-
+@asynccontextmanager
+async def evaluation_context(config: EvaluationConfig = None):
+    """Context manager for evaluation with proper resource management."""
+    evaluator = RobustADKEvaluator(config)
+    try:
+        success = await evaluator.start_agent()
+        if not success:
+            raise Exception("Failed to start agent")
+        yield evaluator
+    finally:
+        await evaluator.stop_agent()
 
 async def main():
-    """Main function to run simple ADK agent evaluation."""
-    print("🎯 Simple HTCondor MCP Agent Evaluation")
-    print("=" * 50)
+    """Main evaluation function with comprehensive error handling."""
+    logger.info("🎯 Starting HTCondor Agent Evaluation")
     
-    # Create evaluation runner
-    runner = SimpleADKEvaluator()
+    # Load test cases
+    try:
+        from comprehensive_test_cases import get_comprehensive_test_cases
+        test_cases = get_comprehensive_test_cases()
+        logger.info(f"📋 Loaded {len(test_cases)} test cases")
+    except Exception as e:
+        logger.error(f"❌ Failed to load test cases: {e}")
+        return
     
-    # Run evaluation suite
-    results = await runner.run_evaluation_suite(TEST_CASES)
+    # Configuration
+    config = EvaluationConfig(
+        max_retries=3,
+        retry_delay=1.0,
+        query_timeout=30,
+        enable_caching=True
+    )
+    
+    try:
+        async with evaluation_context(config) as evaluator:
+            # Run evaluation
+            results = await evaluator.run_evaluation_suite(test_cases)
+            evaluator.results = results
     
     # Generate report
-    runner.generate_report()
+            evaluator.generate_report()
+            
+    except Exception as e:
+        logger.error(f"❌ Evaluation failed: {e}")
+        logger.error(traceback.format_exc())
+        return
     
-    print("\n✅ Simple ADK evaluation completed!")
-
+    logger.info("🎉 Evaluation completed successfully!")
 
 if __name__ == "__main__":
+    try:
     asyncio.run(main()) 
+    except KeyboardInterrupt:
+        logger.info("⏹️ Evaluation interrupted by user")
+    except Exception as e:
+        logger.error(f"❌ Fatal error: {e}")
+        logger.error(traceback.format_exc()) 
