@@ -4,7 +4,7 @@ import os
 from typing import Optional
 
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioConnectionParams
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event
 from typing import AsyncGenerator
@@ -111,7 +111,7 @@ root_agent = HTCondorAgent(
     instruction=DB_MCP_PROMPT,
     tools=[
         MCPToolset(
-            connection_params=StdioConnectionParams(
+            connection_params=StdioServerParameters(
                 command="python3",
                 args=[PATH_TO_YOUR_MCP_SERVER_SCRIPT],
             )
