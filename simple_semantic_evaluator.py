@@ -8,6 +8,7 @@ to assess if the responses are reasonable using LLM.
 
 import json
 import asyncio
+import os
 from typing import List, Dict, Any
 from dataclasses import dataclass
 
@@ -30,7 +31,9 @@ class EvaluationResult:
 class SimpleSemanticEvaluator:
     """Simple evaluator that checks if agent outputs are reasonable."""
     
-    def __init__(self, model_name: str = "gemini-2.0-flash"):
+    def __init__(self, model_name: str = None):
+        if model_name is None:
+            model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
         self.model_name = model_name
         self.llm_agent = None
         
