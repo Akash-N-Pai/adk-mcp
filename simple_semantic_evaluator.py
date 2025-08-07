@@ -49,10 +49,32 @@ class SimpleSemanticEvaluator:
     
     async def evaluate_pair(self, user_input: str, agent_output: str) -> EvaluationResult:
         """Evaluate a single user input and agent output pair."""
+        return await self.evaluate_pair_with_context(user_input, agent_output, "")
+    
+    async def evaluate_pair_with_context(self, user_input: str, agent_output: str, previous_context: str = "") -> EvaluationResult:
+        """Evaluate a single user input and agent output pair with optional context."""
         
         if self.llm_agent:
-            # Use LLM for evaluation with the exact prompt format
-            prompt = f"""
+            # Use LLM for evaluation with context-aware prompt
+            if previous_context:
+                prompt = f"""
+Evaluate the following chatbot response in context.
+{previous_context}
+
+[Current User Question]:
+{user_input}
+[Current Chatbot Response]:
+{agent_output}
+[Evaluation Criteria]:
+- Relevance to user input (considering context)
+- Fluency and clarity
+- Helpfulness and informativeness
+- Factual correctness
+- Contextual appropriateness
+Give a score from 1 to 5 and a short explanation.
+"""
+            else:
+                prompt = f"""
 Evaluate the following chatbot response.
 [User Question]:
 {user_input}
@@ -168,7 +190,7 @@ Give a score from 1 to 5 and a short explanation.
         for eval_case in data.get('eval_cases', []):
             conversation = eval_case.get('conversation', [])
             
-            for turn in conversation:
+            for i, turn in enumerate(conversation):
                 # Extract user input
                 user_input = ""
                 user_content = turn.get('user_content', {})
@@ -190,8 +212,31 @@ Give a score from 1 to 5 and a short explanation.
                 agent_output = agent_output.strip()
                 
                 if user_input and agent_output:
-                    # Evaluate this pair
-                    result = await self.evaluate_pair(user_input, agent_output)
+                    # Get previous context if available
+                    previous_context = ""
+                    if i > 0:
+                        prev_turn = conversation[i-1]
+                        prev_user = ""
+                        prev_agent = ""
+                        
+                        # Extract previous user input
+                        prev_user_content = prev_turn.get('user_content', {})
+                        if 'parts' in prev_user_content:
+                            for part in prev_user_content['parts']:
+                                if 'text' in part:
+                                    prev_user += part['text'] + " "
+                        
+                        # Extract previous agent output
+                        prev_final_response = prev_turn.get('final_response', {})
+                        if 'parts' in prev_final_response:
+                            for part in prev_final_response['parts']:
+                                if 'text' in part:
+                                    prev_agent += part['text'] + " "
+                        
+                        previous_context = f"Previous exchange:\nUser: {prev_user.strip()}\nAgent: {prev_agent.strip()}"
+                    
+                    # Evaluate this pair with context
+                    result = await self.evaluate_pair_with_context(user_input, agent_output, previous_context)
                     results.append(result)
         
         return results
@@ -203,7 +248,7 @@ async def main():
     evaluator = SimpleSemanticEvaluator()
     
     # Evaluate your JSON file
-    json_file = "htcondor_agent_evaluation.test.json"
+    json_file = "htcondor_agent_testfile.test.json"
     
     print(f"Evaluating {json_file}...")
     results = await evaluator.evaluate_json_file(json_file)
