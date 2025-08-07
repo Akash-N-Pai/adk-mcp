@@ -71,20 +71,20 @@
             }
           }
         ]
-      },
-      {
-        "conversation": [
-          {
-            "user_content": {
-              "parts": [
-                {
+    },
+    {
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [
+              {
                   "text": "what is the session id of this"
-                }
-              ]
-            },
-            "final_response": {
-              "parts": [
-                {
+              }
+            ]
+          },
+          "final_response": {
+            "parts": [
+              {
                   "text": "The session ID of this session is 34eb1880-9be3-47e6-8282-cc05c363ab13."
                 }
               ]
@@ -325,7 +325,7 @@
             "final_response": {
               "parts": [
                 {
-                  "text": "| ClusterId | ProcId | Status | Owner    |\n|-----------|--------|--------|----------|\n| 6778745   | 0      | Running | srettie  |\n| 6778747   | 0      | Running | srettie  |\n| 6761417   | 0      | Running | rabalasu |\n| 6761419   | 0      | Running | rabalasu |\n| 6690515   | 0      | Running | maclwong |\n| 6778500   | 0      | Running | srettie  |\n| 6761421   | 0      | Running | rabalasu |\n| 6761422   | 0      | Running | rabalasu |\n| 6761424   | 0      | Running | rabalasu |\n| 6761425   | 0      | Running | rabalasu |\nThere are a total of 289 running jobs."
+                  "text": "| ClusterId | ProcId | Status | Owner    |\n|-----------|--------|--------|----------|\n| 6761417   | 0      | Running | rabalasu |\n| 6761419   | 0      | Running | rabalasu |\n| 6761421   | 0      | Running | rabalasu |\n| 6761422   | 0      | Running | rabalasu |\n| 6761424   | 0      | Running | rabalasu |\n| 6761425   | 0      | Running | rabalasu |\n| 6761426   | 0      | Running | rabalasu |\n| 6761427   | 0      | Running | rabalasu |\n| 6761429   | 0      | Running | rabalasu |\n| 6761431   | 0      | Running | rabalasu |\nThere are a total of 25 jobs for user rabalasu."
                 }
               ]
             }
@@ -800,20 +800,20 @@
             "user_content": {
               "parts": [
                 {
-                  "text": "show me system utilization statistics"
+                  "text": "yes start new session"
                 }
               ]
             },
             "final_response": {
               "parts": [
                 {
-                  "text": "Here are the system utilization statistics for the last 24 hours: \n\n Utilization Statistics: \n- **Time Range**: 24h \n- **Total Jobs**: 3856 \n- **Completed Jobs**: 0 \n- **Completion Rate**: 0.0 \n- **Total CPU Time**: 4256134.0 \n- **Total Memory Usage**: 1139027 \n- **Average Completion Time**: 0 \n- **CPU Utilization Percent**: 0.85% \n- **Memory Utilization Percent**: 6.21% \n\n System Capacity: \n- **Total CPUs**: 5808 \n- **Total Memory (MB)**: 18340246"
+                  "text": "OK. I have started a fresh session for you."
 
-                }
-              ]
-            }
+              }
+            ]
           }
-        ]
-      }
+        }
+      ]
+    }
     ]
   }

@@ -31,6 +31,7 @@ Thumbs.db
 !evaluation/adk_evalset.json
 local_mcp/mcp_server_activity.log
 evaluation_results/
+evaluated_eval_cases.json
 #*.json
 *.txt
 !requirements*.txt
