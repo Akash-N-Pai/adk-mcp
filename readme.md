@@ -14,19 +14,12 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 # Clone and setup
 git clone <repository-url>
 cd adk-mcp
-make install-dev
+
 
 # Set up API key
 echo "GOOGLE_API_KEY=your_gemini_api_key_here" > .env
 
-# Run tests
-make test
-
-# Run evaluation
-make adk-eval
-
-# Start agent (web interface)
-make run-agent
+adk web
 ```
 
 ---
@@ -37,32 +30,25 @@ make run-agent
 adk-mcp/
 ├── local_mcp/
 │   ├── agent.py               # ADK agent with session management and context
-│   ├── server.py              # MCP server with 15+ tools including session tools
+│   ├── server.py              # MCP server with 26 tools including session tools
 │   ├── session_context_simple.py # Simplified 3-table SQLite session management
 │   ├── prompt.py              # Comprehensive prompt with session instructions
 │   ├── __init__.py
 │   └── mcp_server_activity.log # Server activity log (auto-generated)
-├── tests/
-│   ├── test_htcondor_mcp_comprehensive.py # Comprehensive test suite (50+ tests)
-│   └── __init__.py
-├── evaluation/
-│   ├── adk_evalset.json       # ADK evaluation set (30+ test cases)
-│   ├── adk_evaluation.py      # ADK evaluation runner
-│   ├── test_agent_integration.py # Integration testing script
-│   ├── README.md              # Evaluation framework documentation
-│   └── __init__.py
 ├── requirements.txt           # Production dependencies
 ├── requirements-dev.txt       # Development dependencies
-├── Makefile                   # Development commands
 ├── pytest.ini                # Pytest configuration
-├── test_simplified_compatibility.py # Compatibility test script
+├── eval.py                    # Custom evaluation script
+├── test_config.json           # Test configuration
+├── htcondor_agent_testfile.test.json # Test cases
+├── evaluated_eval_cases.json  # Evaluation results
 ├── .env                       # Environment variables (create this)
 └── readme.md                  # Project documentation
 ```
 
 ---
 
-## 🛠️ Available Tools (21 MCP Tools)
+## 🛠️ Available Tools (26 MCP Tools)
 
 The MCP server exposes comprehensive tools for HTCondor management and session management:
 
@@ -85,11 +71,6 @@ The MCP server exposes comprehensive tools for HTCondor management and session m
 - **`get_queue_stats()`**: Get queue statistics by job status
 - **`get_system_load()`**: Get overall system load and capacity
 
-### Reporting and Analytics
-- **`generate_job_report(owner, time_range)`**: Generate comprehensive job reports
-- **`get_utilization_stats(time_range)`**: Get resource utilization statistics
-- **`export_job_data(format, filters)`**: Export job data (JSON/CSV/Summary)
-
 ### Session Management & Context
 - **`list_htcondor_tools()`**: List only HTCondor job management tools
 - **`list_user_sessions()`**: List all user sessions
@@ -102,6 +83,15 @@ The MCP server exposes comprehensive tools for HTCondor management and session m
 - **`add_to_memory(key, value, global_memory)`**: Add information to memory
 - **`search_job_memory(query)`**: Search memory for job information
 - **`get_user_context_summary()`**: Get comprehensive user context
+
+### Reporting and Analytics
+- **`generate_job_report(owner, time_range)`**: Generate comprehensive job reports
+- **`get_utilization_stats(time_range)`**: Get resource utilization statistics
+- **`export_job_data(format, filters)`**: Export job data (JSON/CSV/Summary)
+
+### Context-Aware Tools (ADK Context Integration)
+- **`save_job_report(cluster_id, report_name)`**: Save job report to memory
+- **`load_job_report(report_name)`**: Load saved job report from memory
 
 All tools return structured JSON responses with success flags and relevant data.
 
@@ -218,25 +208,22 @@ Welcome back! I can see you were working with jobs 1234567 and 1234568 earlier..
 
 ## 🧪 Testing & Evaluation
 
-### Comprehensive Testing
-```bash
-make test                    # Run all tests (41 test cases)
-make test-unit              # Run unit tests only
-make test-integration       # Run integration tests only
-make test-cov               # Run tests with coverage report
-make test-agent-integration # Test agent integration specifically
-```
-
 ### ADK Evaluation Framework
 ```bash
-make adk-eval               # Run ADK evaluation (30+ test cases)
+make adk-eval               # Run ADK evaluation
 make adk-eval-verbose       # Run with verbose output
 make adk-eval-custom        # Run with custom paths
+make custom-eval            # Run custom evaluation with detailed scoring
+```
+
+### Custom Evaluation
+```bash
+python eval.py              # Run custom evaluation script
 ```
 
 **Evaluation Coverage:**
-- **30+ Test Cases** covering 7 categories
-- **21 MCP Tools** comprehensively tested including session management
+- **Custom Test Cases** covering comprehensive scenarios
+- **26 MCP Tools** comprehensively tested including session management
 - **Complex Scenarios** including multi-tool interactions
 - **Error Handling** and edge cases
 - **Agent Integration** testing
@@ -247,9 +234,10 @@ make adk-eval-custom        # Run with custom paths
 2. Advanced Job Information
 3. Cluster and Pool Information
 4. Resource Monitoring
-5. Reporting and Analytics
-6. Complex Queries
-7. Error Handling
+5. Session Management
+6. Reporting and Analytics
+7. Complex Queries
+8. Error Handling
 
 ---
 
@@ -258,7 +246,6 @@ make adk-eval-custom        # Run with custom paths
 ```bash
 make format         # Format code with black
 make lint           # Run linting checks (flake8, mypy)
-make full-cycle     # Clean, install, format, lint, test, evaluate
 make clean          # Remove build/test artifacts
 ```
 
@@ -278,10 +265,14 @@ GOOGLE_API_KEY=your_gemini_api_key_here
 ## 📦 Dependencies
 
 - **Production:** (see `requirements.txt`)
-    - `google-adk==1.0.0`
+    - `google-adk==1.9.0`
     - `mcp==1.9.1`
     - `deprecated==1.2.13`
     - `htcondor==24.9.2`
+    - `langchain>=0.1.0`
+    - `langchain-community>=0.1.0`
+    - `langsmith>=0.1.0`
+    - `google-generativeai>=0.3.0`
 - **Development:** (see `requirements-dev.txt`)
     - `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-mock`
     - `black`, `flake8`, `mypy`, `pre-commit`
@@ -319,21 +310,21 @@ pip install -r requirements.txt
 ## 📚 Documentation & References
 
 - **Agent Configuration:** See `local_mcp/agent.py` for agent setup with session management
-- **MCP Server Tools:** See `local_mcp/server.py` for all 21 tool implementations including session tools
+- **MCP Server Tools:** See `local_mcp/server.py` for all 26 tool implementations including session tools
 - **Session Management:** See `local_mcp/session_context_simple.py` for simplified 3-table SQLite schema
 - **Agent Prompt:** See `local_mcp/prompt.py` for comprehensive instructions including session management
-- **Evaluation Framework:** See `evaluation/README.md` for detailed evaluation documentation
-- **Test Suite:** See `tests/test_htcondor_mcp_comprehensive.py` for comprehensive testing
+- **Custom Evaluation:** See `eval.py` for custom evaluation script
+- **Test Configuration:** See `test_config.json` for evaluation configuration
 
 ---
 
 ## 🎯 Key Features
 
-- **21 Advanced MCP Tools** for comprehensive HTCondor management and session control
+- **26 Advanced MCP Tools** for comprehensive HTCondor management and session control
 - **Google ADK Context Integration** with persistent session management and cross-conversation memory
 - **Simplified 3-Table SQLite Schema** for efficient session and context storage
 - **Intelligent Agent** with context-aware responses and session continuity
-- **Robust Testing** with 41 test cases and ADK evaluation framework
+- **Custom Evaluation Framework** with comprehensive test cases
 - **Advanced Monitoring** including resource usage, system load, and analytics
 - **Flexible Reporting** with time-based analysis and data export
 - **Production Ready** with error handling and logging
