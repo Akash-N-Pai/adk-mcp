@@ -98,13 +98,74 @@ class HTCondorDataFrame:
             return []
     
     def get_historical_jobs(self, time_range: Optional[str] = None) -> List[Dict]:
-        """Get jobs from history using condor_history command"""
-        logger.info("Retrieving historical jobs...")
+        """Get jobs from history using HTCondor Python API"""
+        logger.info("Retrieving historical jobs using Python API...")
         
         try:
-            # Build condor_history command with essential attributes only
-            cmd = ["condor_history", "-format", "ClusterId=%d ProcId=%d Owner=%s JobStatus=%d QDate=%d JobStartDate=%d CompletionDate=%d RemoteHost=%s ExitCode=%d ExitSignal=%d RemoteUserCpu=%f MemoryUsage=%f RequestCpus=%d RequestMemory=%d\\n", 
-                   "ClusterId", "ProcId", "Owner", "JobStatus", "QDate", "JobStartDate", "CompletionDate", "RemoteHost", "ExitCode", "ExitSignal", "RemoteUserCpu", "MemoryUsage", "RequestCpus", "RequestMemory"]
+            # Use HTCondor Python API to get historical jobs
+            schedd = htcondor.Schedd()
+            
+            # Build constraint for time range if specified
+            constraint = None
+            if time_range:
+                # Convert time range to constraint
+                # For now, we'll get all history and filter later
+                logger.info(f"Time range specified: {time_range} (will be applied in filtering)")
+            
+            # Get historical jobs with all attributes
+            logger.info("Querying historical jobs from schedd...")
+            historical_jobs = schedd.history(
+                constraint=constraint,
+                match=10000,  # Get up to 10,000 jobs
+                projection=self.job_attributes
+            )
+            
+            job_data = []
+            for job in historical_jobs:
+                try:
+                    # Convert ClassAd to dictionary
+                    job_info = {}
+                    for attr in self.job_attributes:
+                        if attr in job:
+                            value = job[attr]
+                            # Handle ClassAd values
+                            if hasattr(value, 'eval'):
+                                try:
+                                    job_info[attr.lower()] = value.eval()
+                                except Exception:
+                                    job_info[attr.lower()] = str(value.eval())
+                            else:
+                                job_info[attr.lower()] = value
+                        else:
+                            job_info[attr.lower()] = None
+                    
+                    # Add data source indicator
+                    job_info['data_source'] = 'history'
+                    job_info['retrieved_at'] = datetime.datetime.now().isoformat()
+                    
+                    job_data.append(job_info)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to process historical job: {e}")
+                    continue
+            
+            logger.info(f"Retrieved {len(job_data)} jobs from history using Python API")
+            return job_data
+            
+        except Exception as e:
+            logger.error(f"Error retrieving historical jobs using Python API: {e}")
+            logger.info("Falling back to command-line approach...")
+            
+            # Fallback to command-line approach if API fails
+            return self._get_historical_jobs_fallback(time_range)
+    
+    def _get_historical_jobs_fallback(self, time_range: Optional[str] = None) -> List[Dict]:
+        """Fallback method using condor_history command"""
+        logger.info("Using fallback condor_history command...")
+        
+        try:
+            # Build condor_history command to get full output
+            cmd = ["condor_history"]
             
             if time_range:
                 cmd.extend(["-since", time_range])
@@ -116,48 +177,116 @@ class HTCondorDataFrame:
                 logger.error(f"condor_history command failed: {result.stderr}")
                 return []
             
-            # Parse output - ONE JOB PER LINE
-            job_data = []
+            # Parse output - full history format
+            lines = result.stdout.strip().split('\n')
             
-            for line in result.stdout.strip().split('\n'):
+            # Skip header line
+            if lines and 'ID' in lines[0] and 'OWNER' in lines[0]:
+                lines = lines[1:]
+            
+            job_data = []
+            for line in lines:
                 if not line.strip():
                     continue
                 
                 try:
-                    # Parse the formatted line - each line is one complete job
+                    # Parse the full history line format:
+                    # ID     OWNER          SUBMITTED   RUN_TIME     ST COMPLETED   CMD
+                    # 6820169.0 selbor          8/12 12:00   0+01:01:33 C   8/12 13:01 /home/selbor/...
+                    
                     parts = line.split()
-                    job_info = {}
+                    if len(parts) < 6:
+                        continue
                     
-                    for part in parts:
-                        if '=' in part:
-                            key, value = part.split('=', 1)
-                            key = key.lower()
-                            
-                            # Convert data types
-                            if key in ['clusterid', 'procid', 'jobstatus', 'jobuniverse', 
-                                     'numjobstarts', 'numjobmatches', 'numjobmatchesrejected',
-                                     'jobprio', 'exitstatus', 'exitcode', 'exitsignal']:
-                                try:
-                                    job_info[key] = int(value) if value != 'undefined' else None
-                                except (ValueError, TypeError):
-                                    job_info[key] = None
-                            elif key in ['remotesusercpu', 'memoryusage', 'requestcpus', 
-                                       'requestmemory']:
-                                try:
-                                    job_info[key] = float(value) if value != 'undefined' else None
-                                except (ValueError, TypeError):
-                                    job_info[key] = None
-                            elif key in ['qdate', 'jobstartdate', 'completiondate']:
-                                try:
-                                    job_info[key] = int(value) if value != 'undefined' else None
-                                except (ValueError, TypeError):
-                                    job_info[key] = None
-                            else:
-                                job_info[key] = value if value != 'undefined' else None
+                    # Extract job ID (format: clusterid.procid)
+                    job_id_parts = parts[0].split('.')
+                    cluster_id = int(job_id_parts[0])
+                    proc_id = int(job_id_parts[1]) if len(job_id_parts) > 1 else 0
                     
-                    # Add data source indicator
-                    job_info['data_source'] = 'history'
-                    job_info['retrieved_at'] = datetime.datetime.now().isoformat()
+                    # Extract owner
+                    owner = parts[1]
+                    
+                    # Extract status (ST column)
+                    status_char = parts[4]
+                    status_map = {
+                        'C': 4,  # Completed
+                        'X': 3,  # Removed
+                        'H': 5,  # Held
+                        'S': 7,  # Suspended
+                        'I': 1,  # Idle
+                        'R': 2,  # Running
+                        'T': 6   # Transferring
+                    }
+                    job_status = status_map.get(status_char, 0)
+                    
+                    # Extract timestamps and runtime
+                    submitted = parts[2] + ' ' + parts[3]  # "8/12 12:00"
+                    run_time = parts[5]  # "0+01:01:33"
+                    
+                    # Parse completion time if available
+                    completed = None
+                    cmd_start_idx = 6
+                    if len(parts) > 6 and parts[6] != 'X':
+                        completed = parts[6] + ' ' + parts[7]  # "8/12 13:01"
+                        cmd_start_idx = 8
+                    
+                    # Extract command (everything after completion time)
+                    cmd = ' '.join(parts[cmd_start_idx:]) if len(parts) > cmd_start_idx else None
+                    
+                    # Create job info
+                    job_info = {
+                        'clusterid': cluster_id,
+                        'procid': proc_id,
+                        'owner': owner,
+                        'jobstatus': job_status,
+                        'status_description': status_char,
+                        'submitted_str': submitted,
+                        'run_time_str': run_time,
+                        'completed_str': completed,
+                        'cmd': cmd,
+                        'data_source': 'history',
+                        'retrieved_at': datetime.datetime.now().isoformat()
+                    }
+                    
+                    # Try to parse timestamps
+                    try:
+                        # Convert submitted time to timestamp
+                        # Format: "8/12 12:00" -> need to add year and convert
+                        import datetime as dt
+                        current_year = dt.datetime.now().year
+                        submitted_parts = submitted.split()
+                        if len(submitted_parts) == 2:
+                            date_part, time_part = submitted_parts
+                            month, day = map(int, date_part.split('/'))
+                            hour, minute = map(int, time_part.split(':'))
+                            submitted_dt = dt.datetime(current_year, month, day, hour, minute)
+                            job_info['qdate'] = int(submitted_dt.timestamp())
+                        
+                        # Convert completion time if available
+                        if completed:
+                            completed_parts = completed.split()
+                            if len(completed_parts) == 2:
+                                date_part, time_part = completed_parts
+                                month, day = map(int, date_part.split('/'))
+                                hour, minute = map(int, time_part.split(':'))
+                                completed_dt = dt.datetime(current_year, month, day, hour, minute)
+                                job_info['completiondate'] = int(completed_dt.timestamp())
+                    except Exception as e:
+                        logger.debug(f"Failed to parse timestamps for job {cluster_id}: {e}")
+                    
+                    # Parse runtime
+                    try:
+                        # Format: "0+01:01:33" -> days+hours:minutes:seconds
+                        if '+' in run_time:
+                            days_part, time_part = run_time.split('+')
+                            days = int(days_part)
+                            hours, minutes, seconds = map(int, time_part.split(':'))
+                            total_seconds = days * 86400 + hours * 3600 + minutes * 60 + seconds
+                            job_info['runtime_seconds'] = total_seconds
+                            job_info['runtime_minutes'] = total_seconds / 60
+                            job_info['runtime_hours'] = total_seconds / 3600
+                    except Exception as e:
+                        logger.debug(f"Failed to parse runtime for job {cluster_id}: {e}")
                     
                     job_data.append(job_info)
                     
@@ -165,7 +294,7 @@ class HTCondorDataFrame:
                     logger.warning(f"Failed to parse history line: {line[:100]}... Error: {e}")
                     continue
             
-            logger.info(f"Retrieved {len(job_data)} jobs from history")
+            logger.info(f"Retrieved {len(job_data)} jobs from history using fallback method")
             return job_data
             
         except subprocess.TimeoutExpired:
