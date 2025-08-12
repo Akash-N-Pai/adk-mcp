@@ -204,8 +204,11 @@ class HTCondorDataFrame:
             logger.warning("No jobs found")
             return pd.DataFrame()
         
+        # Clean and convert data before creating DataFrame
+        cleaned_jobs = self._clean_job_data(all_jobs)
+        
         # Convert to DataFrame
-        self.df = pd.DataFrame(all_jobs)
+        self.df = pd.DataFrame(cleaned_jobs)
         
         # Add computed columns
         self.df = self.add_computed_columns(self.df)
@@ -215,6 +218,40 @@ class HTCondorDataFrame:
         
         logger.info(f"Created DataFrame with {len(self.df)} jobs")
         return self.df
+    
+    def _clean_job_data(self, jobs: List[Dict]) -> List[Dict]:
+        """Clean and convert job data to handle ClassAd values"""
+        cleaned_jobs = []
+        
+        for job in jobs:
+            cleaned_job = {}
+            for key, value in job.items():
+                try:
+                    # Handle ClassAd values and convert to appropriate types
+                    if hasattr(value, 'eval'):  # ClassAd expression
+                        try:
+                            # Try to evaluate as number
+                            cleaned_value = float(value.eval())
+                        except (ValueError, TypeError):
+                            # If not numeric, get string representation
+                            cleaned_value = str(value.eval())
+                    elif isinstance(value, (int, float, str, bool)):
+                        cleaned_value = value
+                    elif value is None:
+                        cleaned_value = None
+                    else:
+                        # Convert other types to string
+                        cleaned_value = str(value)
+                    
+                    cleaned_job[key] = cleaned_value
+                except Exception as e:
+                    # If conversion fails, use string representation
+                    logger.warning(f"Failed to convert {key}={value}: {e}")
+                    cleaned_job[key] = str(value) if value is not None else None
+            
+            cleaned_jobs.append(cleaned_job)
+        
+        return cleaned_jobs
     
     def add_computed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add computed columns to the DataFrame"""
