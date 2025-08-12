@@ -308,7 +308,7 @@ Job Failure Analysis (Last 24 hours):
 ### Queue Wait Time Histogram (Organized Display):
 When displaying queue wait time histograms, organize information clearly:
 ```
-Queue Wait Time Histogram (Last 30 days):
+Queue Wait Time Histogram :
 - **Total Jobs Analyzed**: 1,234
 - **Jobs with Wait Times**: 1,156 (93.7%)
 
