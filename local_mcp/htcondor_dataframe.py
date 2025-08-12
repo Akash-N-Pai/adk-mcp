@@ -102,30 +102,9 @@ class HTCondorDataFrame:
         logger.info("Retrieving historical jobs...")
         
         try:
-            # Build condor_history command with proper format
-            cmd = ["condor_history"]
-            
-            # Add format for each attribute separately
-            cmd.extend(["-format", "ClusterId=%d\\n", "ClusterId"])
-            cmd.extend(["-format", "ProcId=%d\\n", "ProcId"])
-            cmd.extend(["-format", "Owner=%s\\n", "Owner"])
-            cmd.extend(["-format", "JobStatus=%d\\n", "JobStatus"])
-            cmd.extend(["-format", "QDate=%d\\n", "QDate"])
-            cmd.extend(["-format", "JobStartDate=%d\\n", "JobStartDate"])
-            cmd.extend(["-format", "CompletionDate=%d\\n", "CompletionDate"])
-            cmd.extend(["-format", "RemoteHost=%s\\n", "RemoteHost"])
-            cmd.extend(["-format", "ExitCode=%d\\n", "ExitCode"])
-            cmd.extend(["-format", "ExitSignal=%d\\n", "ExitSignal"])
-            cmd.extend(["-format", "RemoteUserCpu=%f\\n", "RemoteUserCpu"])
-            cmd.extend(["-format", "MemoryUsage=%f\\n", "MemoryUsage"])
-            cmd.extend(["-format", "RequestCpus=%d\\n", "RequestCpus"])
-            cmd.extend(["-format", "RequestMemory=%d\\n", "RequestMemory"])
-            cmd.extend(["-format", "JobPrio=%d\\n", "JobPrio"])
-            cmd.extend(["-format", "JobUniverse=%d\\n", "JobUniverse"])
-            cmd.extend(["-format", "NumJobStarts=%d\\n", "NumJobStarts"])
-            cmd.extend(["-format", "NumJobMatches=%d\\n", "NumJobMatches"])
-            cmd.extend(["-format", "NumJobMatchesRejected=%d\\n", "NumJobMatchesRejected"])
-            cmd.extend(["-format", "ExitStatus=%d\\n", "ExitStatus"])
+            # Build condor_history command with proper format - ONE LINE PER JOB
+            cmd = ["condor_history", "-format", "ClusterId=%d ProcId=%d Owner=%s JobStatus=%d QDate=%d JobStartDate=%d CompletionDate=%d RemoteHost=%s ExitCode=%d ExitSignal=%d RemoteUserCpu=%f MemoryUsage=%f RequestCpus=%d RequestMemory=%d JobPrio=%d JobUniverse=%d NumJobStarts=%d NumJobMatches=%d NumJobMatchesRejected=%d ExitStatus=%d\\n", 
+                   "ClusterId", "ProcId", "Owner", "JobStatus", "QDate", "JobStartDate", "CompletionDate", "RemoteHost", "ExitCode", "ExitSignal", "RemoteUserCpu", "MemoryUsage", "RequestCpus", "RequestMemory", "JobPrio", "JobUniverse", "NumJobStarts", "NumJobMatches", "NumJobMatchesRejected", "ExitStatus"]
             
             if time_range:
                 cmd.extend(["-since", time_range])
@@ -137,7 +116,7 @@ class HTCondorDataFrame:
                 logger.error(f"condor_history command failed: {result.stderr}")
                 return []
             
-            # Parse output
+            # Parse output - ONE JOB PER LINE
             job_data = []
             
             for line in result.stdout.strip().split('\n'):
@@ -145,7 +124,7 @@ class HTCondorDataFrame:
                     continue
                 
                 try:
-                    # Parse the formatted line
+                    # Parse the formatted line - each line is one complete job
                     parts = line.split()
                     job_info = {}
                     
