@@ -207,8 +207,8 @@ class HTCondorDataFrame:
         # Clean and convert data before creating DataFrame
         cleaned_jobs = self._clean_job_data(all_jobs)
         
-        # Convert to DataFrame
-        self.df = pd.DataFrame(cleaned_jobs)
+        # Convert to DataFrame safely
+        self.df = self._create_dataframe_safely(cleaned_jobs)
         
         # Add computed columns
         self.df = self.add_computed_columns(self.df)
@@ -252,6 +252,42 @@ class HTCondorDataFrame:
             cleaned_jobs.append(cleaned_job)
         
         return cleaned_jobs
+    
+    def _create_dataframe_safely(self, jobs: List[Dict]) -> pd.DataFrame:
+        """Create DataFrame with explicit handling of problematic data types"""
+        if not jobs:
+            return pd.DataFrame()
+        
+        # First, ensure all values are basic Python types
+        safe_jobs = []
+        for job in jobs:
+            safe_job = {}
+            for key, value in job.items():
+                # Convert all values to strings first to avoid pandas conversion issues
+                if value is None:
+                    safe_job[key] = None
+                else:
+                    safe_job[key] = str(value)
+            safe_jobs.append(safe_job)
+        
+        # Create DataFrame with object dtype to avoid automatic type conversion
+        df = pd.DataFrame(safe_jobs, dtype=object)
+        
+        # Now convert numeric columns back to appropriate types
+        numeric_columns = ['clusterid', 'procid', 'jobstatus', 'qdate', 'jobstartdate', 
+                          'jobcurrentstartdate', 'completiondate', 'requestcpus', 
+                          'requestmemory', 'remotesusercpu', 'memoryusage', 'jobprio',
+                          'exitcode', 'exitsignal']
+        
+        for col in numeric_columns:
+            if col in df.columns:
+                try:
+                    # Convert to numeric, coercing errors to NaN
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                except Exception as e:
+                    logger.warning(f"Failed to convert column {col} to numeric: {e}")
+        
+        return df
     
     def add_computed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add computed columns to the DataFrame"""
