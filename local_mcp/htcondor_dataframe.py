@@ -103,7 +103,29 @@ class HTCondorDataFrame:
         
         try:
             # Build condor_history command with proper format
-            cmd = ["condor_history", "-format", "ClusterId=%d ProcId=%d Owner=%s JobStatus=%d QDate=%d JobStartDate=%d CompletionDate=%d RemoteHost=%s ExitCode=%d ExitSignal=%d RemoteUserCpu=%f MemoryUsage=%f RequestCpus=%d RequestMemory=%d JobPrio=%d JobUniverse=%d NumJobStarts=%d NumJobMatches=%d NumJobMatchesRejected=%d ExitStatus=%d\\n"]
+            cmd = ["condor_history"]
+            
+            # Add format for each attribute separately
+            cmd.extend(["-format", "ClusterId=%d\\n", "ClusterId"])
+            cmd.extend(["-format", "ProcId=%d\\n", "ProcId"])
+            cmd.extend(["-format", "Owner=%s\\n", "Owner"])
+            cmd.extend(["-format", "JobStatus=%d\\n", "JobStatus"])
+            cmd.extend(["-format", "QDate=%d\\n", "QDate"])
+            cmd.extend(["-format", "JobStartDate=%d\\n", "JobStartDate"])
+            cmd.extend(["-format", "CompletionDate=%d\\n", "CompletionDate"])
+            cmd.extend(["-format", "RemoteHost=%s\\n", "RemoteHost"])
+            cmd.extend(["-format", "ExitCode=%d\\n", "ExitCode"])
+            cmd.extend(["-format", "ExitSignal=%d\\n", "ExitSignal"])
+            cmd.extend(["-format", "RemoteUserCpu=%f\\n", "RemoteUserCpu"])
+            cmd.extend(["-format", "MemoryUsage=%f\\n", "MemoryUsage"])
+            cmd.extend(["-format", "RequestCpus=%d\\n", "RequestCpus"])
+            cmd.extend(["-format", "RequestMemory=%d\\n", "RequestMemory"])
+            cmd.extend(["-format", "JobPrio=%d\\n", "JobPrio"])
+            cmd.extend(["-format", "JobUniverse=%d\\n", "JobUniverse"])
+            cmd.extend(["-format", "NumJobStarts=%d\\n", "NumJobStarts"])
+            cmd.extend(["-format", "NumJobMatches=%d\\n", "NumJobMatches"])
+            cmd.extend(["-format", "NumJobMatchesRejected=%d\\n", "NumJobMatchesRejected"])
+            cmd.extend(["-format", "ExitStatus=%d\\n", "ExitStatus"])
             
             if time_range:
                 cmd.extend(["-since", time_range])
@@ -295,11 +317,23 @@ class HTCondorDataFrame:
                     # Filter out invalid timestamp values
                     valid_timestamps = df[col].dropna()
                     if len(valid_timestamps) > 0:
-                        # Check for reasonable timestamp range (1970-2030)
-                        min_valid = 0  # Unix epoch start
-                        max_valid = 2000000000  # ~2033
-                        
-                        valid_mask = (valid_timestamps >= min_valid) & (valid_timestamps <= max_valid)
+                                            # Check for reasonable timestamp range (1970-2030)
+                    min_valid = 0  # Unix epoch start
+                    max_valid = 2000000000  # ~2033
+                    
+                    # Filter out extreme values that could cause overflow
+                    valid_mask = (valid_timestamps >= min_valid) & (valid_timestamps <= max_valid)
+                    
+                    # Additional safety check for very large values
+                    if valid_timestamps.max() > 1e12:  # If timestamps are in milliseconds
+                        valid_mask = valid_mask & (valid_timestamps <= 1e12)
+                        # Convert milliseconds to seconds
+                        df[f'{col}_datetime'] = pd.to_datetime(
+                            (df[col].where(valid_mask) / 1000).astype(float), 
+                            unit='s', 
+                            errors='coerce'
+                        )
+                    else:
                         df[f'{col}_datetime'] = pd.to_datetime(
                             df[col].where(valid_mask), 
                             unit='s', 
