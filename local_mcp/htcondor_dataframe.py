@@ -6,6 +6,7 @@ Retrieves all job data from both condor_q and condor_history
 
 import htcondor
 import pandas as pd
+import numpy as np
 import subprocess
 import datetime
 import time
@@ -292,23 +293,65 @@ class HTCondorDataFrame:
     def add_computed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add computed columns to the DataFrame"""
         
-        # Convert timestamps to datetime
+        # Convert timestamps to datetime with safe handling
         timestamp_columns = ['qdate', 'jobstartdate', 'jobcurrentstartdate', 'completiondate']
         for col in timestamp_columns:
             if col in df.columns:
-                df[f'{col}_datetime'] = pd.to_datetime(df[col], unit='s', errors='coerce')
+                try:
+                    # Filter out invalid timestamp values
+                    valid_timestamps = df[col].dropna()
+                    if len(valid_timestamps) > 0:
+                        # Check for reasonable timestamp range (1970-2030)
+                        min_valid = 0  # Unix epoch start
+                        max_valid = 2000000000  # ~2033
+                        
+                        valid_mask = (valid_timestamps >= min_valid) & (valid_timestamps <= max_valid)
+                        df[f'{col}_datetime'] = pd.to_datetime(
+                            df[col].where(valid_mask), 
+                            unit='s', 
+                            errors='coerce'
+                        )
+                    else:
+                        df[f'{col}_datetime'] = pd.NaT
+                except Exception as e:
+                    logger.warning(f"Failed to convert timestamps for column {col}: {e}")
+                    df[f'{col}_datetime'] = pd.NaT
         
-        # Calculate wait time
+        # Calculate wait time with safe handling
         if 'qdate' in df.columns and 'jobstartdate' in df.columns:
-            df['wait_time_seconds'] = df['jobstartdate'] - df['qdate']
-            df['wait_time_minutes'] = df['wait_time_seconds'] / 60
-            df['wait_time_hours'] = df['wait_time_seconds'] / 3600
+            try:
+                # Only calculate for valid timestamp pairs
+                valid_mask = df['qdate'].notna() & df['jobstartdate'].notna()
+                df['wait_time_seconds'] = np.where(
+                    valid_mask,
+                    df['jobstartdate'] - df['qdate'],
+                    np.nan
+                )
+                df['wait_time_minutes'] = df['wait_time_seconds'] / 60
+                df['wait_time_hours'] = df['wait_time_seconds'] / 3600
+            except Exception as e:
+                logger.warning(f"Failed to calculate wait times: {e}")
+                df['wait_time_seconds'] = np.nan
+                df['wait_time_minutes'] = np.nan
+                df['wait_time_hours'] = np.nan
         
-        # Calculate runtime
+        # Calculate runtime with safe handling
         if 'jobstartdate' in df.columns and 'completiondate' in df.columns:
-            df['runtime_seconds'] = df['completiondate'] - df['jobstartdate']
-            df['runtime_minutes'] = df['runtime_seconds'] / 60
-            df['runtime_hours'] = df['runtime_seconds'] / 3600
+            try:
+                # Only calculate for valid timestamp pairs
+                valid_mask = df['jobstartdate'].notna() & df['completiondate'].notna()
+                df['runtime_seconds'] = np.where(
+                    valid_mask,
+                    df['completiondate'] - df['jobstartdate'],
+                    np.nan
+                )
+                df['runtime_minutes'] = df['runtime_seconds'] / 60
+                df['runtime_hours'] = df['runtime_seconds'] / 3600
+            except Exception as e:
+                logger.warning(f"Failed to calculate runtime: {e}")
+                df['runtime_seconds'] = np.nan
+                df['runtime_minutes'] = np.nan
+                df['runtime_hours'] = np.nan
         
         # Add status descriptions
         status_map = {
