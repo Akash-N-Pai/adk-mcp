@@ -1694,6 +1694,286 @@ def export_job_data(format: str = "json", filters: Optional[dict] = None, tool_c
         return result
 
 
+def generate_advanced_job_report(
+    owner: Optional[str] = None, 
+    time_range: Optional[str] = "7d",
+    report_type: str = "comprehensive",
+    include_trends: bool = True,
+    include_predictions: bool = False,
+    output_format: str = "json",
+    tool_context=None
+) -> dict:
+    """Generate advanced job report with comprehensive analytics."""
+    session_id, user_id = ensure_session_exists(tool_context)
+    
+    try:
+        schedd = htcondor.Schedd()
+        
+        # Calculate time range
+        if time_range.endswith('h'):
+            hours = int(time_range[:-1])
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
+        elif time_range.endswith('d'):
+            days = int(time_range[:-1])
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=days)
+        elif time_range.endswith('w'):
+            weeks = int(time_range[:-1])
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(weeks=weeks)
+        else:
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=7)
+        
+        # Build constraint
+        constraints = [f'QDate > {int(cutoff_time.timestamp())}']
+        if owner:
+            constraints.append(f'Owner == "{owner}"')
+        
+        constraint = " and ".join(constraints)
+        
+        # Get comprehensive job attributes
+        attrs = [
+            "ClusterId", "ProcId", "JobStatus", "Owner", "QDate", "CompletionDate",
+            "RemoteUserCpu", "RemoteSysCpu", "ImageSize", "MemoryUsage", "CommittedTime",
+            "RequestCpus", "RequestMemory", "RequestDisk", "Requirements", "Rank",
+            "LastMatchTime", "LastSuspensionTime", "NumJobStarts", "NumJobReconnects",
+            "NumJobReleases", "NumJobMatches", "NumJobMatchesRejected", "NumJobMatchesRejectedTotal",
+            "JobPrio", "NiceUser", "ExitCode", "ExitBySignal", "ExitSignal",
+            "LastJobLeaseRenewal", "LastJobStatusUpdate", "LastJobStatusUpdateTime"
+        ]
+        
+        jobs = schedd.query(constraint, projection=attrs)
+        
+        # Process job data with enhanced metrics
+        job_data = []
+        total_cpu = 0
+        total_memory = 0
+        total_disk = 0
+        status_counts = defaultdict(int)
+        owner_stats = defaultdict(lambda: {"jobs": 0, "cpu": 0, "memory": 0, "completed": 0, "failed": 0})
+        hourly_distribution = defaultdict(int)
+        daily_distribution = defaultdict(int)
+        completion_times = []
+        failure_reasons = defaultdict(int)
+        resource_efficiency = []
+        
+        for ad in jobs:
+            job_info = {}
+            for attr in attrs:
+                v = ad.get(attr)
+                if hasattr(v, "eval"):
+                    try:
+                        v = v.eval()
+                    except Exception:
+                        v = None
+                job_info[attr.lower()] = v
+            
+            # Calculate enhanced metrics
+            cpu_time = job_info.get("remoteusercpu", 0) or 0
+            memory_usage = job_info.get("memoryusage", 0) or 0
+            disk_usage = job_info.get("imagesize", 0) or 0
+            q_date = job_info.get("qdate")
+            completion_date = job_info.get("completiondate")
+            status = job_info.get("jobstatus")
+            owner = job_info.get("owner", "unknown")
+            exit_code = job_info.get("exitcode")
+            
+            total_cpu += cpu_time
+            total_memory += memory_usage
+            total_disk += disk_usage
+            status_counts[status] += 1
+            
+            # Owner statistics
+            owner_stats[owner]["jobs"] += 1
+            owner_stats[owner]["cpu"] += cpu_time
+            owner_stats[owner]["memory"] += memory_usage
+            
+            if status == 4:  # Completed
+                owner_stats[owner]["completed"] += 1
+                if q_date and completion_date:
+                    completion_time = completion_date - q_date
+                    completion_times.append(completion_time)
+            elif status in [3, 5, 7]:  # Removed, Held, or Suspended
+                owner_stats[owner]["failed"] += 1
+                if exit_code:
+                    failure_reasons[exit_code] += 1
+            
+            # Time distribution analysis
+            if q_date:
+                q_datetime = datetime.datetime.fromtimestamp(q_date)
+                hourly_distribution[q_datetime.hour] += 1
+                daily_distribution[q_datetime.strftime("%Y-%m-%d")] += 1
+            
+            # Resource efficiency analysis
+            requested_cpus = job_info.get("requestcpus", 1) or 1
+            requested_memory = job_info.get("requestmemory", 0) or 0
+            if requested_cpus > 0 and requested_memory > 0:
+                cpu_efficiency = cpu_time / requested_cpus if requested_cpus > 0 else 0
+                memory_efficiency = memory_usage / requested_memory if requested_memory > 0 else 0
+                resource_efficiency.append({
+                    "cluster_id": job_info.get("clusterid"),
+                    "cpu_efficiency": cpu_efficiency,
+                    "memory_efficiency": memory_efficiency,
+                    "overall_efficiency": (cpu_efficiency + memory_efficiency) / 2
+                })
+            
+            job_data.append(job_info)
+        
+        # Calculate advanced metrics
+        avg_completion_time = sum(completion_times) / len(completion_times) if completion_times else 0
+        # Success rate: only completed jobs (status 4) are considered successful
+        # Failed jobs include: removed (3), held (5), and suspended (7)
+        success_rate = (status_counts.get(4, 0) / len(job_data)) * 100 if job_data else 0
+        
+        # Resource utilization analysis
+        total_jobs = len(job_data)
+        avg_cpu_per_job = total_cpu / total_jobs if total_jobs > 0 else 0
+        avg_memory_per_job = total_memory / total_jobs if total_jobs > 0 else 0
+        avg_disk_per_job = total_disk / total_jobs if total_jobs > 0 else 0
+        
+        # Trend analysis (if requested)
+        trends = {}
+        if include_trends and len(daily_distribution) > 1:
+            sorted_days = sorted(daily_distribution.items())
+            job_counts = [count for _, count in sorted_days]
+            
+            # Simple linear trend
+            if len(job_counts) > 1:
+                x = list(range(len(job_counts)))
+                y = job_counts
+                slope = (len(x) * sum(i * j for i, j in zip(x, y)) - sum(x) * sum(y)) / (len(x) * sum(i * i for i in x) - sum(x) ** 2)
+                trends["job_submission_trend"] = "increasing" if slope > 0 else "decreasing" if slope < 0 else "stable"
+                trends["trend_slope"] = slope
+        
+        # Predictive analytics (if requested)
+        predictions = {}
+        if include_predictions and len(daily_distribution) > 3:
+            # Simple moving average prediction
+            sorted_days = sorted(daily_distribution.items())
+            recent_counts = [count for _, count in sorted_days[-3:]]
+            avg_recent = sum(recent_counts) / len(recent_counts)
+            predictions["predicted_jobs_next_day"] = int(avg_recent)
+            predictions["confidence_level"] = "medium"
+        
+        # Performance insights
+        performance_insights = []
+        if resource_efficiency:
+            avg_efficiency = sum(r["overall_efficiency"] for r in resource_efficiency) / len(resource_efficiency)
+            if avg_efficiency < 0.5:
+                performance_insights.append("Low resource utilization detected - consider optimizing job requirements")
+            if len(failure_reasons) > 0:
+                top_failure = max(failure_reasons.items(), key=lambda x: x[1])
+                performance_insights.append(f"Most common failure reason: Exit code {top_failure[0]} ({top_failure[1]} occurrences)")
+        
+        # Generate comprehensive report
+        report = {
+            "report_metadata": {
+                "generated_at": datetime.datetime.now().isoformat(),
+                "report_type": report_type,
+                "owner_filter": owner or "all",
+                "time_range": time_range,
+                "total_jobs": total_jobs,
+                "analysis_duration": f"{(datetime.datetime.now() - cutoff_time).days} days"
+            },
+            "summary": {
+                "total_jobs": total_jobs,
+                "status_distribution": dict(status_counts),
+                "success_rate_percent": success_rate,
+                "total_cpu_time": total_cpu,
+                "total_memory_usage_mb": total_memory,
+                "total_disk_usage_mb": total_disk,
+                "average_completion_time_seconds": avg_completion_time,
+                "average_cpu_per_job": avg_cpu_per_job,
+                "average_memory_per_job": avg_memory_per_job,
+                "average_disk_per_job": avg_disk_per_job
+            },
+            "owner_analysis": {
+                owner: {
+                    "total_jobs": stats["jobs"],
+                    "completed_jobs": stats["completed"],
+                    "failed_jobs": stats["failed"],
+                    "success_rate": (stats["completed"] / stats["jobs"] * 100) if stats["jobs"] > 0 else 0,
+                    "total_cpu_time": stats["cpu"],
+                    "total_memory_usage": stats["memory"],
+                    "average_cpu_per_job": stats["cpu"] / stats["jobs"] if stats["jobs"] > 0 else 0
+                }
+                for owner, stats in owner_stats.items()
+            },
+            "temporal_analysis": {
+                "hourly_distribution": dict(hourly_distribution),
+                "daily_distribution": dict(daily_distribution),
+                "peak_hour": max(hourly_distribution.items(), key=lambda x: x[1])[0] if hourly_distribution else None,
+                "peak_day": max(daily_distribution.items(), key=lambda x: x[1])[0] if daily_distribution else None
+            },
+            "failure_analysis": {
+                "failure_reasons": dict(failure_reasons),
+                "total_failures": sum(failure_reasons.values()),
+                "failure_rate_percent": (sum(failure_reasons.values()) / total_jobs * 100) if total_jobs > 0 else 0
+            },
+            "resource_efficiency": {
+                "average_efficiency": sum(r["overall_efficiency"] for r in resource_efficiency) / len(resource_efficiency) if resource_efficiency else 0,
+                "efficiency_distribution": {
+                    "high": len([r for r in resource_efficiency if r["overall_efficiency"] > 0.8]),
+                    "medium": len([r for r in resource_efficiency if 0.5 <= r["overall_efficiency"] <= 0.8]),
+                    "low": len([r for r in resource_efficiency if r["overall_efficiency"] < 0.5])
+                }
+            }
+        }
+        
+        if trends:
+            report["trends"] = trends
+        if predictions:
+            report["predictions"] = predictions
+        if performance_insights:
+            report["performance_insights"] = performance_insights
+        
+        # Include detailed job data based on report type
+        if report_type == "comprehensive":
+            report["job_details"] = job_data[:200]  # Limit to prevent large responses
+        elif report_type == "summary":
+            report["job_details"] = job_data[:50]
+        else:  # minimal
+            report["job_details"] = []
+        
+        # Process output format
+        if output_format.lower() == "json":
+            formatted_data = report
+        elif output_format.lower() == "csv":
+            # Convert job details to CSV format
+            if report.get("job_details"):
+                headers = list(report["job_details"][0].keys())
+                csv_lines = [",".join(headers)]
+                for job in report["job_details"]:
+                    row = [str(job.get(header, "")) for header in headers]
+                    csv_lines.append(",".join(row))
+                formatted_data = "\n".join(csv_lines)
+            else:
+                formatted_data = "No job details available for CSV export"
+        elif output_format.lower() == "summary":
+            # Return only summary statistics
+            formatted_data = {
+                "summary": report.get("summary", {}),
+                "owner_analysis": report.get("owner_analysis", {}),
+                "performance_insights": report.get("performance_insights", [])
+            }
+        else:
+            return {"success": False, "message": f"Unsupported output format: {output_format}"}
+        
+        result = {
+            "success": True,
+            "output_format": output_format,
+            "report": formatted_data
+        }
+        
+        log_tool_call(session_id, user_id, "generate_advanced_job_report", 
+                     {"owner": owner, "time_range": time_range, "report_type": report_type}, result)
+        return result
+        
+    except Exception as e:
+        result = {"success": False, "message": f"Error generating advanced job report: {str(e)}"}
+        log_tool_call(session_id, user_id, "generate_advanced_job_report", 
+                     {"owner": owner, "time_range": time_range, "report_type": report_type}, result)
+        return result
+
+
 # ===== NEW CONTEXT-AWARE TOOLS =====
 
 
@@ -1730,6 +2010,8 @@ def list_htcondor_tools(tool_context=None) -> dict:
         reporting_tools = []
         if "generate_job_report" in available_tools:
             reporting_tools.append("generate_job_report - Generate comprehensive job reports")
+        if "generate_advanced_job_report" in available_tools:
+            reporting_tools.append("generate_advanced_job_report - Generate advanced analytics with trends, predictions, and performance insights")
         if "get_utilization_stats" in available_tools:
             reporting_tools.append("get_utilization_stats - Get resource utilization statistics")
         if "export_job_data" in available_tools:
@@ -1804,6 +2086,7 @@ ADK_AF_TOOLS = {
     
     # Reporting and Analytics
     "generate_job_report": FunctionTool(func=generate_job_report),
+    "generate_advanced_job_report": FunctionTool(func=generate_advanced_job_report),
     "get_utilization_stats": FunctionTool(func=get_utilization_stats),
     "export_job_data": FunctionTool(func=export_job_data),
     
