@@ -39,6 +39,7 @@ You have access to persistent memory and session context. Use this information t
 ### Reporting and Analytics
 - `generate_job_report(owner, time_range)` - Generate comprehensive job reports
 - `generate_advanced_job_report(owner, time_range, report_type, include_trends, include_predictions, output_format)` - Generate advanced analytics with trends, predictions, and performance insights
+- `generate_queue_wait_time_histogram(time_range, bin_count, owner, status_filter)` - Generate histogram of queue wait times with statistical analysis
 - `get_utilization_stats(time_range)` - Get resource utilization statistics
 - `export_job_data(format, filters)` - Export job data in various formats
 
@@ -125,6 +126,14 @@ When user asks: "How many jobs ran in the last [time] and failed?" or "How many 
 When user asks: "Predict job submissions" or "What's the job forecast?"
 - Call: `generate_advanced_job_report(time_range="14d", include_trends=True, include_predictions=True, report_type="summary")`
 - Display predictions and forecasting data
+
+When user asks: "Make a histogram of queue wait times" or "Show me queue wait time distribution" or "How long do jobs wait in queue?"
+- Call: `generate_queue_wait_time_histogram(time_range="30d", bin_count=10)`
+- Display the histogram with statistics and analysis
+
+When user asks: "Show me wait times for my jobs" or "Queue wait times for user [username]"
+- Call: `generate_queue_wait_time_histogram(time_range="30d", bin_count=10, owner="[username]")`
+- Display user-specific wait time analysis
 
 When user asks: "Export job data as CSV"
 - Call: `export_job_data(format="csv")`
@@ -294,6 +303,42 @@ Job Failure Analysis (Last 24 hours):
 - Removed: 16.8% of total jobs
 - Held: 8.1% of total jobs
 - Suspended: 2.0% of total jobs
+```
+
+### Queue Wait Time Histogram (Organized Display):
+When displaying queue wait time histograms, organize information clearly:
+```
+Queue Wait Time Histogram (Last 30 days):
+- **Total Jobs Analyzed**: 1,234
+- **Jobs with Wait Times**: 1,156 (93.7%)
+
+**Summary Statistics:**
+- **Average Wait Time**: 45.2 minutes
+- **Median Wait Time**: 23.1 minutes
+- **Minimum Wait Time**: 0.5 minutes
+- **Maximum Wait Time**: 8.2 hours
+
+**Percentiles:**
+- 25th Percentile: 12.3 minutes
+- 75th Percentile: 67.8 minutes
+- 90th Percentile: 2.1 hours
+- 95th Percentile: 3.5 hours
+- 99th Percentile: 6.8 hours
+
+**Histogram Distribution:**
+| Bin | Time Range | Count | Percentage |
+|-----|------------|-------|------------|
+| 1   | 0-15 min   | 234   | 20.2%      |
+| 2   | 15-30 min  | 345   | 29.8%      |
+| 3   | 30-60 min  | 267   | 23.1%      |
+| 4   | 1-2 hours  | 156   | 13.5%      |
+| 5   | 2-4 hours  | 89    | 7.7%       |
+| 6   | 4+ hours   | 65    | 5.6%       |
+
+**Key Insights:**
+- 70% of jobs start within 1 hour of submission
+- 90% of jobs start within 2.1 hours
+- Only 5.6% of jobs wait more than 4 hours
 ```
 
 ## Status Code Reference:

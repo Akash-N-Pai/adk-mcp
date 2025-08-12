@@ -1974,6 +1974,218 @@ def generate_advanced_job_report(
         return result
 
 
+def generate_queue_wait_time_histogram(
+    time_range: Optional[str] = "30d",
+    bin_count: int = 10,
+    owner: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    tool_context=None
+) -> dict:
+    """Generate histogram of queue wait times for jobs."""
+    session_id, user_id = ensure_session_exists(tool_context)
+    
+    try:
+        schedd = htcondor.Schedd()
+        
+        # Calculate time range
+        if time_range.endswith('h'):
+            hours = int(time_range[:-1])
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
+        elif time_range.endswith('d'):
+            days = int(time_range[:-1])
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=days)
+        elif time_range.endswith('w'):
+            weeks = int(time_range[:-1])
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(weeks=weeks)
+        else:
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=30)
+        
+        # Build constraint
+        constraints = [f'QDate > {int(cutoff_time.timestamp())}']
+        if owner:
+            constraints.append(f'Owner == "{owner}"')
+        
+        # Add status filter if specified
+        if status_filter:
+            status_map = {
+                "running": 2, "idle": 1, "held": 5,
+                "completed": 4, "removed": 3, "suspended": 7
+            }
+            status_code = status_map.get(status_filter.lower())
+            if status_code is not None:
+                constraints.append(f"JobStatus == {status_code}")
+        
+        constraint = " and ".join(constraints)
+        
+        # Get job attributes needed for wait time calculation
+        attrs = [
+            "ClusterId", "ProcId", "JobStatus", "Owner", "QDate", 
+            "JobStartDate", "JobCurrentStartDate", "LastMatchTime"
+        ]
+        
+        jobs = schedd.query(constraint, projection=attrs)
+        
+        # Calculate wait times
+        wait_times = []
+        job_details = []
+        
+        for ad in jobs:
+            job_info = {}
+            for attr in attrs:
+                v = ad.get(attr)
+                if hasattr(v, "eval"):
+                    try:
+                        v = v.eval()
+                    except Exception:
+                        v = None
+                job_info[attr.lower()] = v
+            
+            q_date = job_info.get("qdate")
+            job_start_date = job_info.get("jobstartdate")
+            job_current_start_date = job_info.get("jobcurrentstartdate")
+            
+            # Use current start date if available, otherwise use first start date
+            start_date = job_current_start_date or job_start_date
+            
+            if q_date and start_date and start_date > q_date:
+                wait_time = start_date - q_date  # Wait time in seconds
+                wait_times.append(wait_time)
+                
+                job_details.append({
+                    "cluster_id": job_info.get("clusterid"),
+                    "proc_id": job_info.get("procid"),
+                    "owner": job_info.get("owner"),
+                    "status": job_info.get("jobstatus"),
+                    "queue_date": q_date,
+                    "start_date": start_date,
+                    "wait_time_seconds": wait_time,
+                    "wait_time_minutes": wait_time / 60,
+                    "wait_time_hours": wait_time / 3600
+                })
+        
+        if not wait_times:
+            result = {
+                "success": True,
+                "message": "No jobs with valid wait time data found in the specified time range",
+                "time_range": time_range,
+                "total_jobs_analyzed": len(jobs),
+                "jobs_with_wait_times": 0,
+                "histogram": {},
+                "statistics": {}
+            }
+            log_tool_call(session_id, user_id, "generate_queue_wait_time_histogram", 
+                         {"time_range": time_range, "bin_count": bin_count, "owner": owner, "status_filter": status_filter}, result)
+            return result
+        
+        # Calculate statistics
+        wait_times.sort()
+        total_jobs = len(wait_times)
+        min_wait = min(wait_times)
+        max_wait = max(wait_times)
+        avg_wait = sum(wait_times) / total_jobs
+        median_wait = wait_times[total_jobs // 2] if total_jobs % 2 == 1 else (wait_times[total_jobs // 2 - 1] + wait_times[total_jobs // 2]) / 2
+        
+        # Calculate percentiles
+        p25 = wait_times[int(total_jobs * 0.25)]
+        p75 = wait_times[int(total_jobs * 0.75)]
+        p90 = wait_times[int(total_jobs * 0.90)]
+        p95 = wait_times[int(total_jobs * 0.95)]
+        p99 = wait_times[int(total_jobs * 0.99)]
+        
+        # Create histogram bins
+        bin_width = (max_wait - min_wait) / bin_count if max_wait > min_wait else 1
+        bins = []
+        bin_counts = [0] * bin_count
+        
+        for i in range(bin_count):
+            bin_start = min_wait + (i * bin_width)
+            bin_end = min_wait + ((i + 1) * bin_width) if i < bin_count - 1 else max_wait + 1
+            bins.append({
+                "bin_number": i + 1,
+                "range_start_seconds": bin_start,
+                "range_end_seconds": bin_end,
+                "range_start_minutes": bin_start / 60,
+                "range_end_minutes": bin_end / 60,
+                "range_start_hours": bin_start / 3600,
+                "range_end_hours": bin_end / 3600,
+                "count": 0,
+                "percentage": 0
+            })
+        
+        # Populate histogram
+        for wait_time in wait_times:
+            bin_index = min(int((wait_time - min_wait) / bin_width), bin_count - 1)
+            bin_counts[bin_index] += 1
+            bins[bin_index]["count"] += 1
+        
+        # Calculate percentages
+        for bin_data in bins:
+            bin_data["percentage"] = (bin_data["count"] / total_jobs) * 100
+        
+        # Create summary statistics
+        statistics = {
+            "total_jobs_analyzed": len(jobs),
+            "jobs_with_wait_times": total_jobs,
+            "min_wait_time_seconds": min_wait,
+            "max_wait_time_seconds": max_wait,
+            "avg_wait_time_seconds": avg_wait,
+            "median_wait_time_seconds": median_wait,
+            "min_wait_time_minutes": min_wait / 60,
+            "max_wait_time_minutes": max_wait / 60,
+            "avg_wait_time_minutes": avg_wait / 60,
+            "median_wait_time_minutes": median_wait / 60,
+            "min_wait_time_hours": min_wait / 3600,
+            "max_wait_time_hours": max_wait / 3600,
+            "avg_wait_time_hours": avg_wait / 3600,
+            "median_wait_time_hours": median_wait / 3600,
+            "percentiles": {
+                "25th_percentile_seconds": p25,
+                "75th_percentile_seconds": p75,
+                "90th_percentile_seconds": p90,
+                "95th_percentile_seconds": p95,
+                "99th_percentile_seconds": p99,
+                "25th_percentile_minutes": p25 / 60,
+                "75th_percentile_minutes": p75 / 60,
+                "90th_percentile_minutes": p90 / 60,
+                "95th_percentile_minutes": p95 / 60,
+                "99th_percentile_minutes": p99 / 60,
+                "25th_percentile_hours": p25 / 3600,
+                "75th_percentile_hours": p75 / 3600,
+                "90th_percentile_hours": p90 / 3600,
+                "95th_percentile_hours": p95 / 3600,
+                "99th_percentile_hours": p99 / 3600
+            }
+        }
+        
+        # Create result
+        result = {
+            "success": True,
+            "time_range": time_range,
+            "bin_count": bin_count,
+            "owner_filter": owner or "all",
+            "status_filter": status_filter or "all",
+            "statistics": statistics,
+            "histogram": {
+                "bins": bins,
+                "total_jobs": total_jobs,
+                "bin_width_seconds": bin_width,
+                "bin_width_minutes": bin_width / 60,
+                "bin_width_hours": bin_width / 3600
+            },
+            "sample_jobs": job_details[:20]  # Include first 20 jobs as examples
+        }
+        
+        log_tool_call(session_id, user_id, "generate_queue_wait_time_histogram", 
+                     {"time_range": time_range, "bin_count": bin_count, "owner": owner, "status_filter": status_filter}, result)
+        return result
+        
+    except Exception as e:
+        result = {"success": False, "message": f"Error generating queue wait time histogram: {str(e)}"}
+        log_tool_call(session_id, user_id, "generate_queue_wait_time_histogram", 
+                     {"time_range": time_range, "bin_count": bin_count, "owner": owner, "status_filter": status_filter}, result)
+        return result
+
+
 # ===== NEW CONTEXT-AWARE TOOLS =====
 
 
@@ -2012,6 +2224,8 @@ def list_htcondor_tools(tool_context=None) -> dict:
             reporting_tools.append("generate_job_report - Generate comprehensive job reports")
         if "generate_advanced_job_report" in available_tools:
             reporting_tools.append("generate_advanced_job_report - Generate advanced analytics with trends, predictions, and performance insights")
+        if "generate_queue_wait_time_histogram" in available_tools:
+            reporting_tools.append("generate_queue_wait_time_histogram - Generate histogram of queue wait times with statistical analysis")
         if "get_utilization_stats" in available_tools:
             reporting_tools.append("get_utilization_stats - Get resource utilization statistics")
         if "export_job_data" in available_tools:
@@ -2087,6 +2301,7 @@ ADK_AF_TOOLS = {
     # Reporting and Analytics
     "generate_job_report": FunctionTool(func=generate_job_report),
     "generate_advanced_job_report": FunctionTool(func=generate_advanced_job_report),
+    "generate_queue_wait_time_histogram": FunctionTool(func=generate_queue_wait_time_histogram),
     "get_utilization_stats": FunctionTool(func=get_utilization_stats),
     "export_job_data": FunctionTool(func=export_job_data),
     
