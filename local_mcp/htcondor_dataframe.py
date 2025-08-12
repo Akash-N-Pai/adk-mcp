@@ -317,28 +317,28 @@ class HTCondorDataFrame:
                     # Filter out invalid timestamp values
                     valid_timestamps = df[col].dropna()
                     if len(valid_timestamps) > 0:
-                                            # Check for reasonable timestamp range (1970-2030)
-                    min_valid = 0  # Unix epoch start
-                    max_valid = 2000000000  # ~2033
-                    
-                    # Filter out extreme values that could cause overflow
-                    valid_mask = (valid_timestamps >= min_valid) & (valid_timestamps <= max_valid)
-                    
-                    # Additional safety check for very large values
-                    if valid_timestamps.max() > 1e12:  # If timestamps are in milliseconds
-                        valid_mask = valid_mask & (valid_timestamps <= 1e12)
-                        # Convert milliseconds to seconds
-                        df[f'{col}_datetime'] = pd.to_datetime(
-                            (df[col].where(valid_mask) / 1000).astype(float), 
-                            unit='s', 
-                            errors='coerce'
-                        )
-                    else:
-                        df[f'{col}_datetime'] = pd.to_datetime(
-                            df[col].where(valid_mask), 
-                            unit='s', 
-                            errors='coerce'
-                        )
+                        # Check for reasonable timestamp range (1970-2030)
+                        min_valid = 0  # Unix epoch start
+                        max_valid = 2000000000  # ~2033
+                        
+                        # Filter out extreme values that could cause overflow
+                        valid_mask = (valid_timestamps >= min_valid) & (valid_timestamps <= max_valid)
+                        
+                        # Additional safety check for very large values
+                        if valid_timestamps.max() > 1e12:  # If timestamps are in milliseconds
+                            valid_mask = valid_mask & (valid_timestamps <= 1e12)
+                            # Convert milliseconds to seconds
+                            df[f'{col}_datetime'] = pd.to_datetime(
+                                (df[col].where(valid_mask) / 1000).astype(float), 
+                                unit='s', 
+                                errors='coerce'
+                            )
+                        else:
+                            df[f'{col}_datetime'] = pd.to_datetime(
+                                df[col].where(valid_mask), 
+                                unit='s', 
+                                errors='coerce'
+                            )
                     else:
                         df[f'{col}_datetime'] = pd.NaT
                 except Exception as e:
