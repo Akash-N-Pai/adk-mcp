@@ -102,17 +102,14 @@ class HTCondorDataFrame:
         logger.info("Retrieving historical jobs...")
         
         try:
-            # Build condor_history command
-            cmd = ["condor_history"]
+            # Build condor_history command with proper format
+            cmd = ["condor_history", "-format", "ClusterId=%d ProcId=%d Owner=%s JobStatus=%d QDate=%d JobStartDate=%d CompletionDate=%d RemoteHost=%s ExitCode=%d ExitSignal=%d RemoteUserCpu=%f MemoryUsage=%f RequestCpus=%d RequestMemory=%d JobPrio=%d JobUniverse=%d NumJobStarts=%d NumJobMatches=%d NumJobMatchesRejected=%d ExitStatus=%d\\n"]
+            
             if time_range:
                 cmd.extend(["-since", time_range])
             
-            # Add format for all attributes
-            for attr in self.job_attributes:
-                cmd.extend(["-format", f"{attr}: %s\\n", attr])
-            
             # Execute command
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             
             if result.returncode != 0:
                 logger.error(f"condor_history command failed: {result.stderr}")
@@ -120,55 +117,52 @@ class HTCondorDataFrame:
             
             # Parse output
             job_data = []
-            current_job = {}
             
             for line in result.stdout.strip().split('\n'):
                 if not line.strip():
-                    # Empty line indicates end of job
-                    if current_job:
-                        current_job['data_source'] = 'history'
-                        current_job['retrieved_at'] = datetime.datetime.now().isoformat()
-                        job_data.append(current_job)
-                        current_job = {}
-                else:
-                    # Parse attribute line
-                    if ':' in line:
-                        key, value = line.split(':', 1)
-                        key = key.strip().lower()
-                        value = value.strip()
-                        
-                        # Convert data types
-                        if key in ['clusterid', 'procid', 'jobstatus', 'jobuniverse', 
-                                 'numjobstarts', 'numjobreconnects', 'numjobreleases',
-                                 'numjobmatches', 'numjobmatchesrejected', 'jobprio', 'niceuser',
-                                 'exitstatus', 'exitcode', 'exitsignal']:
-                            try:
-                                value = int(value) if value != 'undefined' else None
-                            except (ValueError, TypeError):
-                                value = None
-                        elif key in ['remotesusercpu', 'remotesyscpu', 'imagesize', 'memoryusage',
-                                   'diskusage', 'committedtime', 'wallclockcheckpoint',
-                                   'requestcpus', 'requestmemory', 'requestdisk', 'requestgpus',
-                                   'jobleaserenewaltime', 'jobleaserenewaltime']:
-                            try:
-                                value = float(value) if value != 'undefined' else None
-                            except (ValueError, TypeError):
-                                value = None
-                        elif key in ['qdate', 'jobstartdate', 'jobcurrentstartdate', 'completiondate',
-                                   'lastmatchtime', 'lastsuspensiontime', 'lastjobleaserenewal',
-                                   'lastjobstatusupdate', 'lastjobstatusupdatetime']:
-                            try:
-                                value = int(value) if value != 'undefined' else None
-                            except (ValueError, TypeError):
-                                value = None
-                        
-                        current_job[key] = value
-            
-            # Add last job if exists
-            if current_job:
-                current_job['data_source'] = 'history'
-                current_job['retrieved_at'] = datetime.datetime.now().isoformat()
-                job_data.append(current_job)
+                    continue
+                
+                try:
+                    # Parse the formatted line
+                    parts = line.split()
+                    job_info = {}
+                    
+                    for part in parts:
+                        if '=' in part:
+                            key, value = part.split('=', 1)
+                            key = key.lower()
+                            
+                            # Convert data types
+                            if key in ['clusterid', 'procid', 'jobstatus', 'jobuniverse', 
+                                     'numjobstarts', 'numjobmatches', 'numjobmatchesrejected',
+                                     'jobprio', 'exitstatus', 'exitcode', 'exitsignal']:
+                                try:
+                                    job_info[key] = int(value) if value != 'undefined' else None
+                                except (ValueError, TypeError):
+                                    job_info[key] = None
+                            elif key in ['remotesusercpu', 'memoryusage', 'requestcpus', 
+                                       'requestmemory']:
+                                try:
+                                    job_info[key] = float(value) if value != 'undefined' else None
+                                except (ValueError, TypeError):
+                                    job_info[key] = None
+                            elif key in ['qdate', 'jobstartdate', 'completiondate']:
+                                try:
+                                    job_info[key] = int(value) if value != 'undefined' else None
+                                except (ValueError, TypeError):
+                                    job_info[key] = None
+                            else:
+                                job_info[key] = value if value != 'undefined' else None
+                    
+                    # Add data source indicator
+                    job_info['data_source'] = 'history'
+                    job_info['retrieved_at'] = datetime.datetime.now().isoformat()
+                    
+                    job_data.append(job_info)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to parse history line: {line[:100]}... Error: {e}")
+                    continue
             
             logger.info(f"Retrieved {len(job_data)} jobs from history")
             return job_data
