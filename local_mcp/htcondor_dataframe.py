@@ -1,0 +1,390 @@
+#!/usr/bin/env python3
+"""
+HTCondor Comprehensive DataFrame Tool
+Retrieves all job data from both condor_q and condor_history
+"""
+
+import htcondor
+import pandas as pd
+import subprocess
+import datetime
+import time
+import logging
+from typing import Optional, Dict, List, Tuple
+from collections import defaultdict
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class HTCondorDataFrame:
+    """Comprehensive HTCondor job data management using pandas DataFrame"""
+    
+    def __init__(self):
+        self.df = None
+        self.last_update = None
+        self.update_interval = 300  # 5 minutes default
+        self.schedd = htcondor.Schedd()
+        
+        # Define comprehensive job attributes
+        self.job_attributes = [
+            # Basic job info
+            "ClusterId", "ProcId", "JobStatus", "Owner", "Cmd", "Arguments",
+            "Iwd", "JobUniverse", "Requirements", "Rank",
+            
+            # Timing information
+            "QDate", "JobStartDate", "JobCurrentStartDate", "CompletionDate",
+            "LastMatchTime", "LastSuspensionTime", "LastJobLeaseRenewal",
+            "LastJobStatusUpdate", "LastJobStatusUpdateTime",
+            
+            # Resource usage
+            "RemoteUserCpu", "RemoteSysCpu", "ImageSize", "MemoryUsage", 
+            "DiskUsage", "CommittedTime", "WallClockCheckpoint",
+            
+            # Resource requests
+            "RequestCpus", "RequestMemory", "RequestDisk", "RequestGpus",
+            
+            # Job execution info
+            "NumJobStarts", "NumJobReconnects", "NumJobReleases", 
+            "NumJobMatches", "NumJobMatchesRejected", "NumJobMatchesRejectedTotal",
+            "JobPrio", "NiceUser",
+            
+            # Exit information
+            "ExitStatus", "ExitCode", "ExitBySignal", "ExitSignal",
+            
+            # File information
+            "In", "Out", "Err", "UserLog", "TransferIn", "TransferOut",
+            
+            # Machine information
+            "RemoteHost", "RemoteSlotID", "RemoteUserCpu", "RemoteSysCpu",
+            
+            # Additional metadata
+            "JobDescription", "JobLeaseDuration", "JobLeaseRenewalTime",
+            "JobLeaseRenewalTime", "JobLeaseRenewalTime", "JobLeaseRenewalTime"
+        ]
+    
+    def get_current_queue_jobs(self) -> List[Dict]:
+        """Get jobs from current queue using schedd.query()"""
+        logger.info("Retrieving current queue jobs...")
+        
+        try:
+            # Query all jobs in current queue
+            jobs = self.schedd.query("True", projection=self.job_attributes)
+            
+            job_data = []
+            for ad in jobs:
+                job_info = {}
+                for attr in self.job_attributes:
+                    v = ad.get(attr)
+                    if hasattr(v, "eval"):
+                        try:
+                            v = v.eval()
+                        except Exception:
+                            v = None
+                    job_info[attr.lower()] = v
+                
+                # Add data source indicator
+                job_info['data_source'] = 'current_queue'
+                job_info['retrieved_at'] = datetime.datetime.now().isoformat()
+                
+                job_data.append(job_info)
+            
+            logger.info(f"Retrieved {len(job_data)} jobs from current queue")
+            return job_data
+            
+        except Exception as e:
+            logger.error(f"Error retrieving current queue jobs: {e}")
+            return []
+    
+    def get_historical_jobs(self, time_range: Optional[str] = None) -> List[Dict]:
+        """Get jobs from history using condor_history command"""
+        logger.info("Retrieving historical jobs...")
+        
+        try:
+            # Build condor_history command
+            cmd = ["condor_history"]
+            if time_range:
+                cmd.extend(["-since", time_range])
+            
+            # Add format for all attributes
+            for attr in self.job_attributes:
+                cmd.extend(["-format", f"{attr}: %s\\n", attr])
+            
+            # Execute command
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            if result.returncode != 0:
+                logger.error(f"condor_history command failed: {result.stderr}")
+                return []
+            
+            # Parse output
+            job_data = []
+            current_job = {}
+            
+            for line in result.stdout.strip().split('\n'):
+                if not line.strip():
+                    # Empty line indicates end of job
+                    if current_job:
+                        current_job['data_source'] = 'history'
+                        current_job['retrieved_at'] = datetime.datetime.now().isoformat()
+                        job_data.append(current_job)
+                        current_job = {}
+                else:
+                    # Parse attribute line
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        key = key.strip().lower()
+                        value = value.strip()
+                        
+                        # Convert data types
+                        if key in ['clusterid', 'procid', 'jobstatus', 'jobuniverse', 
+                                 'numjobstarts', 'numjobreconnects', 'numjobreleases',
+                                 'numjobmatches', 'numjobmatchesrejected', 'jobprio', 'niceuser',
+                                 'exitstatus', 'exitcode', 'exitsignal']:
+                            try:
+                                value = int(value) if value != 'undefined' else None
+                            except (ValueError, TypeError):
+                                value = None
+                        elif key in ['remotesusercpu', 'remotesyscpu', 'imagesize', 'memoryusage',
+                                   'diskusage', 'committedtime', 'wallclockcheckpoint',
+                                   'requestcpus', 'requestmemory', 'requestdisk', 'requestgpus',
+                                   'jobleaserenewaltime', 'jobleaserenewaltime']:
+                            try:
+                                value = float(value) if value != 'undefined' else None
+                            except (ValueError, TypeError):
+                                value = None
+                        elif key in ['qdate', 'jobstartdate', 'jobcurrentstartdate', 'completiondate',
+                                   'lastmatchtime', 'lastsuspensiontime', 'lastjobleaserenewal',
+                                   'lastjobstatusupdate', 'lastjobstatusupdatetime']:
+                            try:
+                                value = int(value) if value != 'undefined' else None
+                            except (ValueError, TypeError):
+                                value = None
+                        
+                        current_job[key] = value
+            
+            # Add last job if exists
+            if current_job:
+                current_job['data_source'] = 'history'
+                current_job['retrieved_at'] = datetime.datetime.now().isoformat()
+                job_data.append(current_job)
+            
+            logger.info(f"Retrieved {len(job_data)} jobs from history")
+            return job_data
+            
+        except subprocess.TimeoutExpired:
+            logger.error("condor_history command timed out")
+            return []
+        except Exception as e:
+            logger.error(f"Error retrieving historical jobs: {e}")
+            return []
+    
+    def get_all_jobs(self, time_range: Optional[str] = None, force_update: bool = False) -> pd.DataFrame:
+        """Get all jobs (current queue + history) as DataFrame"""
+        
+        # Check if update is needed
+        if (not force_update and self.df is not None and 
+            self.last_update and 
+            (datetime.datetime.now() - self.last_update).seconds < self.update_interval):
+            logger.info("Using cached DataFrame")
+            return self.df
+        
+        logger.info("Building comprehensive job DataFrame...")
+        
+        # Get current queue jobs
+        current_jobs = self.get_current_queue_jobs()
+        
+        # Get historical jobs
+        historical_jobs = self.get_historical_jobs(time_range)
+        
+        # Combine all jobs
+        all_jobs = current_jobs + historical_jobs
+        
+        if not all_jobs:
+            logger.warning("No jobs found")
+            return pd.DataFrame()
+        
+        # Convert to DataFrame
+        self.df = pd.DataFrame(all_jobs)
+        
+        # Add computed columns
+        self.df = self.add_computed_columns(self.df)
+        
+        # Update timestamp
+        self.last_update = datetime.datetime.now()
+        
+        logger.info(f"Created DataFrame with {len(self.df)} jobs")
+        return self.df
+    
+    def add_computed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add computed columns to the DataFrame"""
+        
+        # Convert timestamps to datetime
+        timestamp_columns = ['qdate', 'jobstartdate', 'jobcurrentstartdate', 'completiondate']
+        for col in timestamp_columns:
+            if col in df.columns:
+                df[f'{col}_datetime'] = pd.to_datetime(df[col], unit='s', errors='coerce')
+        
+        # Calculate wait time
+        if 'qdate' in df.columns and 'jobstartdate' in df.columns:
+            df['wait_time_seconds'] = df['jobstartdate'] - df['qdate']
+            df['wait_time_minutes'] = df['wait_time_seconds'] / 60
+            df['wait_time_hours'] = df['wait_time_seconds'] / 3600
+        
+        # Calculate runtime
+        if 'jobstartdate' in df.columns and 'completiondate' in df.columns:
+            df['runtime_seconds'] = df['completiondate'] - df['jobstartdate']
+            df['runtime_minutes'] = df['runtime_seconds'] / 60
+            df['runtime_hours'] = df['runtime_seconds'] / 3600
+        
+        # Add status descriptions
+        status_map = {
+            1: 'Idle', 2: 'Running', 3: 'Removed', 4: 'Completed',
+            5: 'Held', 6: 'Transferring Output', 7: 'Suspended'
+        }
+        df['status_description'] = df['jobstatus'].map(status_map)
+        
+        # Add success/failure indicators
+        df['is_successful'] = df['jobstatus'] == 4
+        df['is_failed'] = df['jobstatus'].isin([3, 5, 7])
+        
+        # Add resource efficiency
+        if 'requestcpus' in df.columns and 'remotesusercpu' in df.columns:
+            df['cpu_efficiency'] = df['remotesusercpu'] / df['requestcpus']
+        
+        if 'requestmemory' in df.columns and 'memoryusage' in df.columns:
+            df['memory_efficiency'] = df['memoryusage'] / df['requestmemory']
+        
+        return df
+    
+    def get_summary_stats(self) -> Dict:
+        """Get summary statistics from the DataFrame"""
+        if self.df is None or len(self.df) == 0:
+            return {}
+        
+        stats = {
+            'total_jobs': len(self.df),
+            'current_queue_jobs': len(self.df[self.df['data_source'] == 'current_queue']),
+            'historical_jobs': len(self.df[self.df['data_source'] == 'history']),
+            'successful_jobs': len(self.df[self.df['is_successful'] == True]),
+            'failed_jobs': len(self.df[self.df['is_failed'] == True]),
+            'success_rate': (len(self.df[self.df['is_successful'] == True]) / len(self.df)) * 100,
+            'unique_owners': self.df['owner'].nunique(),
+            'date_range': {
+                'earliest': self.df['qdate_datetime'].min().isoformat() if 'qdate_datetime' in self.df.columns else None,
+                'latest': self.df['qdate_datetime'].max().isoformat() if 'qdate_datetime' in self.df.columns else None
+            }
+        }
+        
+        return stats
+    
+    def filter_jobs(self, filters: Dict) -> pd.DataFrame:
+        """Filter jobs based on criteria"""
+        if self.df is None:
+            return pd.DataFrame()
+        
+        filtered_df = self.df.copy()
+        
+        for key, value in filters.items():
+            if key in filtered_df.columns:
+                if isinstance(value, (list, tuple)):
+                    filtered_df = filtered_df[filtered_df[key].isin(value)]
+                else:
+                    filtered_df = filtered_df[filtered_df[key] == value]
+        
+        return filtered_df
+    
+    def get_job_by_cluster(self, cluster_id: int) -> pd.DataFrame:
+        """Get specific job by cluster ID"""
+        if self.df is None:
+            return pd.DataFrame()
+        
+        return self.df[self.df['clusterid'] == cluster_id]
+    
+    def export_to_csv(self, filename: str, filters: Optional[Dict] = None):
+        """Export DataFrame to CSV"""
+        if self.df is None:
+            logger.error("No DataFrame to export")
+            return
+        
+        df_to_export = self.filter_jobs(filters) if filters else self.df
+        df_to_export.to_csv(filename, index=False)
+        logger.info(f"Exported {len(df_to_export)} jobs to {filename}")
+    
+    def get_recent_jobs(self, hours: int = 24) -> pd.DataFrame:
+        """Get jobs from the last N hours"""
+        if self.df is None or 'qdate_datetime' not in self.df.columns:
+            return pd.DataFrame()
+        
+        cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
+        return self.df[self.df['qdate_datetime'] >= cutoff_time]
+
+def main():
+    """Test the HTCondorDataFrame functionality"""
+    
+    print("=== HTCondor Comprehensive DataFrame Test ===\n")
+    
+    # Create DataFrame instance
+    htcondor_df = HTCondorDataFrame()
+    
+    # Get all jobs
+    print("📊 Retrieving all job data...")
+    df = htcondor_df.get_all_jobs()
+    
+    if len(df) == 0:
+        print("❌ No jobs found")
+        return
+    
+    print(f"✅ Retrieved {len(df)} total jobs")
+    
+    # Get summary statistics
+    stats = htcondor_df.get_summary_stats()
+    print(f"\n📈 Summary Statistics:")
+    print(f"   Total jobs: {stats['total_jobs']}")
+    print(f"   Current queue: {stats['current_queue_jobs']}")
+    print(f"   Historical: {stats['historical_jobs']}")
+    print(f"   Successful: {stats['successful_jobs']}")
+    print(f"   Failed: {stats['failed_jobs']}")
+    print(f"   Success rate: {stats['success_rate']:.1f}%")
+    print(f"   Unique owners: {stats['unique_owners']}")
+    
+    # Show DataFrame info
+    print(f"\n📋 DataFrame Info:")
+    print(f"   Shape: {df.shape}")
+    print(f"   Columns: {len(df.columns)}")
+    print(f"   Memory usage: {df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+    
+    # Show sample data
+    print(f"\n📄 Sample Data (first 5 rows):")
+    print(df.head().to_string())
+    
+    # Show column names
+    print(f"\n🔍 Available Columns:")
+    for i, col in enumerate(df.columns, 1):
+        print(f"   {i:2d}. {col}")
+    
+    # Test filtering
+    print(f"\n🔍 Testing Filters:")
+    
+    # Filter by status
+    running_jobs = htcondor_df.filter_jobs({'jobstatus': 2})
+    print(f"   Running jobs: {len(running_jobs)}")
+    
+    # Filter by owner (if available)
+    if 'owner' in df.columns and len(df['owner'].unique()) > 0:
+        sample_owner = df['owner'].iloc[0]
+        owner_jobs = htcondor_df.filter_jobs({'owner': sample_owner})
+        print(f"   Jobs by {sample_owner}: {len(owner_jobs)}")
+    
+    # Get recent jobs
+    recent_jobs = htcondor_df.get_recent_jobs(hours=24)
+    print(f"   Jobs in last 24h: {len(recent_jobs)}")
+    
+    # Export sample
+    print(f"\n💾 Exporting sample data...")
+    htcondor_df.export_to_csv('htcondor_jobs_sample.csv', {'jobstatus': [2, 4]})  # Running and completed jobs
+    
+    print(f"\n✅ Test complete! Check 'htcondor_jobs_sample.csv' for exported data.")
+
+if __name__ == "__main__":
+    main()
