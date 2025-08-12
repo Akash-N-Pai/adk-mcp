@@ -102,9 +102,9 @@ class HTCondorDataFrame:
         logger.info("Retrieving historical jobs...")
         
         try:
-            # Build condor_history command with proper format - ONE LINE PER JOB
-            cmd = ["condor_history", "-format", "ClusterId=%d ProcId=%d Owner=%s JobStatus=%d QDate=%d JobStartDate=%d CompletionDate=%d RemoteHost=%s ExitCode=%d ExitSignal=%d RemoteUserCpu=%f MemoryUsage=%f RequestCpus=%d RequestMemory=%d JobPrio=%d JobUniverse=%d NumJobStarts=%d NumJobMatches=%d NumJobMatchesRejected=%d ExitStatus=%d\\n", 
-                   "ClusterId", "ProcId", "Owner", "JobStatus", "QDate", "JobStartDate", "CompletionDate", "RemoteHost", "ExitCode", "ExitSignal", "RemoteUserCpu", "MemoryUsage", "RequestCpus", "RequestMemory", "JobPrio", "JobUniverse", "NumJobStarts", "NumJobMatches", "NumJobMatchesRejected", "ExitStatus"]
+            # Build condor_history command with essential attributes only
+            cmd = ["condor_history", "-format", "ClusterId=%d ProcId=%d Owner=%s JobStatus=%d QDate=%d JobStartDate=%d CompletionDate=%d RemoteHost=%s ExitCode=%d ExitSignal=%d RemoteUserCpu=%f MemoryUsage=%f RequestCpus=%d RequestMemory=%d\\n", 
+                   "ClusterId", "ProcId", "Owner", "JobStatus", "QDate", "JobStartDate", "CompletionDate", "RemoteHost", "ExitCode", "ExitSignal", "RemoteUserCpu", "MemoryUsage", "RequestCpus", "RequestMemory"]
             
             if time_range:
                 cmd.extend(["-since", time_range])
