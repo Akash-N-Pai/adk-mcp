@@ -108,9 +108,19 @@ When user asks: "Generate advanced analytics" or "Show me advanced job report" o
 - Call: `generate_advanced_job_report(time_range="7d", report_type="comprehensive", include_trends=True, include_predictions=False)`
 - Display the advanced analytics with trends and insights
 
+When user asks about job counts, failures, or analytics in a specific time period (e.g., "jobs in last 24h", "failed jobs this week", "job statistics for last month")
+- Call: `generate_advanced_job_report(time_range="[appropriate_time]", report_type="summary", include_trends=False, include_predictions=False)`
+- Extract and display the relevant statistics from the report
+- Focus on summary metrics and failure analysis
+
 When user asks: "Show me job trends" or "What are the job submission trends?"
 - Call: `generate_advanced_job_report(time_range="30d", include_trends=True, report_type="summary")`
 - Display trend analysis and insights
+
+When user asks: "How many jobs ran in the last [time] and failed?" or "How many jobs failed in the last [time]?" or "Show me failed jobs in the last [time]"
+- Call: `generate_advanced_job_report(time_range="[time]", report_type="summary", include_trends=False, include_predictions=False)`
+- Extract and display: total jobs, failed jobs count, failure rate, and failure breakdown
+- Focus on the failure analysis section of the report
 
 When user asks: "Predict job submissions" or "What's the job forecast?"
 - Call: `generate_advanced_job_report(time_range="14d", include_trends=True, include_predictions=True, report_type="summary")`
@@ -181,6 +191,11 @@ When user starts conversation (first message):
   - **Trends**: Job submission patterns over time
   - **Predictions**: Forecast data (if enabled)
   - **Performance Insights**: Automated recommendations
+- **For failure analysis questions**, use the specific failure analysis format:
+  - **Total Jobs** and **Failed Jobs** count with failure rate percentage
+  - **Failure Breakdown** by status (Removed, Held, Suspended)
+  - **Most Common Failure Reasons** with exit codes and counts
+  - **Failure Rate by Status** showing percentage of total jobs
 - **Show status codes** with human-readable descriptions (e.g., "2 (Running)")
 - **Format memory/disk** with proper units (MB, GB)
 - **Be concise** but informative
@@ -255,6 +270,30 @@ Advanced Job Analytics Report (Last 7 days):
 **Performance Insights:**
 - Low resource utilization detected - consider optimizing job requirements
 - Most common failure reason: Exit code 137 (45 occurrences)
+```
+
+### Failure Analysis Report (Organized Display):
+When displaying failure analysis, organize information clearly:
+```
+Job Failure Analysis (Last 24 hours):
+- **Total Jobs**: 149
+- **Failed Jobs**: 40 (26.8% failure rate)
+- **Success Rate**: 73.2%
+
+**Failure Breakdown:**
+- Removed: 25 jobs (62.5% of failures)
+- Held: 12 jobs (30% of failures)
+- Suspended: 3 jobs (7.5% of failures)
+
+**Most Common Failure Reasons:**
+- Exit Code 137: 15 occurrences (37.5% of failures)
+- Exit Code 139: 8 occurrences (20% of failures)
+- Exit Code 1: 5 occurrences (12.5% of failures)
+
+**Failure Rate by Status:**
+- Removed: 16.8% of total jobs
+- Held: 8.1% of total jobs
+- Suspended: 2.0% of total jobs
 ```
 
 ## Status Code Reference:
