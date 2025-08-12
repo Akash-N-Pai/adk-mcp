@@ -1696,215 +1696,7 @@ def export_job_data(format: str = "json", filters: Optional[dict] = None, tool_c
 
 # ===== NEW CONTEXT-AWARE TOOLS =====
 
-def save_job_report(cluster_id: int, report_name: str, tool_context=None) -> dict:
-    """Save a job report as an artifact using ADK Context."""
-    # Get proper ADK context
-    context_manager = get_context_manager()
-    
-    # Extract session info from tool_context if available
-    session_id = None
-    user_id = None
-    if tool_context and hasattr(tool_context, 'htcondor_context'):
-        # Using proper ADK ToolContext
-        htcondor_ctx = tool_context.htcondor_context
-        session_id = htcondor_ctx.session_id
-        user_id = htcondor_ctx.user_id
-    else:
-        # Fallback to old method
-        session_id, user_id = ensure_session_exists(tool_context)
-    
-    try:
-        # Get job status first
-        job_status_result = get_job_status(cluster_id, tool_context)
-        
-        if not job_status_result.get("success"):
-            result = {"success": False, "message": f"Failed to get job status: {job_status_result.get('message')}"}
-            log_tool_call(session_id, user_id, "save_job_report", {"cluster_id": cluster_id, "report_name": report_name}, result)
-            return result
-        
-        # Create report data
-        report_data = {
-            "cluster_id": cluster_id,
-            "report_name": report_name,
-            "generated_at": datetime.datetime.now().isoformat(),
-            "job_status": job_status_result.get("job_status", {}),
-            "user_id": user_id,
-            "session_id": session_id
-        }
-        
-        # Save as artifact using ADK Context
-        if tool_context and hasattr(tool_context, 'save_htcondor_artifact'):
-            artifact_id = tool_context.save_htcondor_artifact(report_name, report_data)
-            result = {
-                "success": True,
-                "message": f"Job report saved as artifact",
-                "artifact_id": artifact_id,
-                "report_name": report_name,
-                "cluster_id": cluster_id
-            }
-        else:
-            # Fallback: save to context manager directly
-            artifact_id = context_manager._save_artifact(session_id, report_name, report_data)
-            result = {
-                "success": True,
-                "message": f"Job report saved as artifact (fallback)",
-                "artifact_id": artifact_id,
-                "report_name": report_name,
-                "cluster_id": cluster_id
-            }
-        
-        log_tool_call(session_id, user_id, "save_job_report", {"cluster_id": cluster_id, "report_name": report_name}, result)
-        return result
-        
-    except Exception as e:
-        result = {"success": False, "message": f"Error saving job report: {str(e)}"}
-        log_tool_call(session_id, user_id, "save_job_report", {"cluster_id": cluster_id, "report_name": report_name}, result)
-        return result
 
-
-def load_job_report(report_name: str, tool_context=None) -> dict:
-    """Load a previously saved job report using ADK Context."""
-    # Get proper ADK context
-    context_manager = get_context_manager()
-    
-    # Extract session info from tool_context if available
-    session_id = None
-    user_id = None
-    if tool_context and hasattr(tool_context, 'htcondor_context'):
-        # Using proper ADK ToolContext
-        htcondor_ctx = tool_context.htcondor_context
-        session_id = htcondor_ctx.session_id
-        user_id = htcondor_ctx.user_id
-    else:
-        # Fallback to old method
-        session_id, user_id = ensure_session_exists(tool_context)
-    
-    try:
-        # Load artifact using ADK Context
-        if tool_context and hasattr(tool_context, 'load_htcondor_artifact'):
-            artifact_data = tool_context.load_htcondor_artifact(report_name)
-        else:
-            # Fallback: load from context manager directly
-            artifact_data = context_manager._load_artifact(session_id, report_name)
-        
-        if not artifact_data:
-            result = {"success": False, "message": f"No report found with name: {report_name}"}
-            log_tool_call(session_id, user_id, "load_job_report", {"report_name": report_name}, result)
-            return result
-        
-        result = {
-            "success": True,
-            "message": f"Job report loaded successfully",
-            "report_name": report_name,
-            "artifact_data": artifact_data
-        }
-        
-        log_tool_call(session_id, user_id, "load_job_report", {"report_name": report_name}, result)
-        return result
-        
-    except Exception as e:
-        result = {"success": False, "message": f"Error loading job report: {str(e)}"}
-        log_tool_call(session_id, user_id, "load_job_report", {"report_name": report_name}, result)
-        return result
-
-
-def search_job_memory(query: str, tool_context=None) -> dict:
-    """Search memory for job-related information using ADK Context."""
-    # Get proper ADK context
-    context_manager = get_context_manager()
-    
-    # Extract session info from tool_context if available
-    session_id = None
-    user_id = None
-    if tool_context and hasattr(tool_context, 'htcondor_context'):
-        # Using proper ADK ToolContext
-        htcondor_ctx = tool_context.htcondor_context
-        session_id = htcondor_ctx.session_id
-        user_id = htcondor_ctx.user_id
-    else:
-        # Fallback to old method
-        session_id, user_id = ensure_session_exists(tool_context)
-    
-    try:
-        # Search memory using ADK Context
-        if tool_context and hasattr(tool_context, 'search_htcondor_memory'):
-            search_results = tool_context.search_htcondor_memory(query)
-        else:
-            # Fallback: search from context manager directly
-            search_results = context_manager._search_memory(user_id, query)
-        
-        result = {
-            "success": True,
-            "message": f"Memory search completed",
-            "query": query,
-            "results_count": len(search_results),
-            "search_results": search_results
-        }
-        
-        log_tool_call(session_id, user_id, "search_job_memory", {"query": query}, result)
-        return result
-        
-    except Exception as e:
-        result = {"success": False, "message": f"Error searching memory: {str(e)}"}
-        log_tool_call(session_id, user_id, "search_job_memory", {"query": query}, result)
-        return result
-
-
-def get_user_context_summary(tool_context=None) -> dict:
-    """Get a comprehensive summary of the user's context and history."""
-    # Get simplified session context manager
-    scm = get_simplified_session_context_manager()
-    
-    # Extract session info from tool_context if available
-    session_id = None
-    user_id = None
-    if tool_context and hasattr(tool_context, 'htcondor_context'):
-        # Using proper ADK ToolContext
-        htcondor_ctx = tool_context.htcondor_context
-        session_id = htcondor_ctx.session_id
-        user_id = htcondor_ctx.user_id
-    else:
-        # Fallback to old method
-        session_id, user_id = ensure_session_exists(tool_context)
-    
-    try:
-        # Get user memory
-        user_memory = scm.get_user_memory(user_id)
-        
-        # Get current session context
-        current_context = None
-        if tool_context and hasattr(tool_context, 'htcondor_context'):
-            current_context = tool_context.htcondor_context
-        
-        # Get recent job history
-        recent_jobs = []
-        if current_context and current_context.job_history:
-            recent_jobs = current_context.job_history[-10:]  # Last 10 jobs
-        
-        # Get user preferences
-        preferences = {}
-        if current_context and current_context.preferences:
-            preferences = current_context.preferences
-        
-        result = {
-            "success": True,
-            "message": f"User context summary retrieved",
-            "user_id": user_id,
-            "session_id": session_id,
-            "current_jobs": current_context.current_jobs if current_context else [],
-            "recent_job_history": recent_jobs,
-            "user_preferences": preferences,
-            "memory_entries": len(user_memory),
-            "session_active": scm.validate_session(session_id) if session_id else False
-        }
-        
-        log_tool_call(session_id, user_id, "get_user_context_summary", {}, result)
-        return result
-        
-    except Exception as e:
-        result = {"success": False, "message": f"Error getting user context summary: {str(e)}"}
-        log_tool_call(session_id, user_id, "get_user_context_summary", {}, result)
-        return result
 
 
 def list_htcondor_tools(tool_context=None) -> dict:
@@ -1945,20 +1737,7 @@ def list_htcondor_tools(tool_context=None) -> dict:
         if reporting_tools:
             htcondor_tools["Reporting and Analytics"] = reporting_tools
         
-        # Context-Aware Tools (ADK Context Integration)
-        context_tools = []
-        if "save_job_report" in available_tools:
-            context_tools.append("save_job_report - Save a job report as an artifact using ADK Context")
-        if "load_job_report" in available_tools:
-            context_tools.append("load_job_report - Load a previously saved job report using ADK Context")
-        if "search_job_memory" in available_tools:
-            context_tools.append("search_job_memory - Search memory for job-related information using ADK Context")
-        if "get_user_context_summary" in available_tools:
-            context_tools.append("get_user_context_summary - Get a comprehensive summary of the user's context and history")
-        if "add_to_memory" in available_tools:
-            context_tools.append("add_to_memory - Add information to memory using ADK Context")
-        if context_tools:
-            htcondor_tools["Context-Aware Tools (ADK Context Integration)"] = context_tools
+
         
         # Session Management (if any HTCondor-related sessions are available)
         session_tools = []
@@ -2002,42 +1781,7 @@ def list_htcondor_tools(tool_context=None) -> dict:
         log_tool_call(session_id, user_id, "list_htcondor_tools", {}, result)
         return result
 
-def add_to_memory(key: str, value: str, global_memory: bool = False, tool_context=None) -> dict:
-    """Add information to memory using ADK Context."""
-    # Get simplified session context manager
-    scm = get_simplified_session_context_manager()
-    
-    # Extract session info from tool_context if available
-    session_id = None
-    user_id = None
-    if tool_context and hasattr(tool_context, 'htcondor_context'):
-        # Using proper ADK ToolContext
-        htcondor_ctx = tool_context.htcondor_context
-        session_id = htcondor_ctx.session_id
-        user_id = htcondor_ctx.user_id
-    else:
-        # Fallback to old method
-        session_id, user_id = ensure_session_exists(tool_context)
-    
-    try:
-        # Add to memory using context manager
-        scm.add_to_memory(user_id, key, value, global_memory)
-        
-        result = {
-            "success": True,
-            "message": f"Information added to {'global' if global_memory else 'user'} memory",
-            "key": key,
-            "value": value,
-            "memory_type": "global" if global_memory else "user"
-        }
-        
-        log_tool_call(session_id, user_id, "add_to_memory", {"key": key, "value": value, "global_memory": global_memory}, result)
-        return result
-        
-    except Exception as e:
-        result = {"success": False, "message": f"Error adding to memory: {str(e)}"}
-        log_tool_call(session_id, user_id, "add_to_memory", {"key": key, "value": value, "global_memory": global_memory}, result)
-        return result
+
 
 
 ADK_AF_TOOLS = {
@@ -2063,12 +1807,7 @@ ADK_AF_TOOLS = {
     "get_utilization_stats": FunctionTool(func=get_utilization_stats),
     "export_job_data": FunctionTool(func=export_job_data),
     
-    # Context-Aware Tools (ADK Context Integration)
-    "save_job_report": FunctionTool(func=save_job_report),
-    "load_job_report": FunctionTool(func=load_job_report),
-    "search_job_memory": FunctionTool(func=search_job_memory),
-    "get_user_context_summary": FunctionTool(func=get_user_context_summary),
-    "add_to_memory": FunctionTool(func=add_to_memory),
+
 }
 
 
