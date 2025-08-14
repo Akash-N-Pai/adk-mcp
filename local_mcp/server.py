@@ -2043,11 +2043,24 @@ def get_jobs_from_global_dataframe(time_range: Optional[str] = None, owner: Opti
         # Get global DataFrame
         htcondor_df = get_global_dataframe()
         
-        # Get all jobs
-        df = htcondor_df.get_all_jobs(time_range=time_range, force_update=False)
+        # Get all jobs (without time filtering to get full dataset)
+        df = htcondor_df.get_all_jobs(force_update=False)
         
         if len(df) == 0:
             return pd.DataFrame()
+        
+        # Apply time range filter if specified
+        if time_range and 'qdate' in df.columns:
+            if time_range.endswith('h'):
+                hours = int(time_range[:-1])
+                cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
+            elif time_range.endswith('d'):
+                days = int(time_range[:-1])
+                cutoff_time = datetime.datetime.now() - datetime.timedelta(days=days)
+            else:
+                cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=24)
+            cutoff_timestamp = int(cutoff_time.timestamp())
+            df = df[pd.to_numeric(df['qdate'], errors='coerce').fillna(0) >= cutoff_timestamp]
         
         # Apply owner filter if specified
         if owner and 'owner' in df.columns:
@@ -2126,9 +2139,8 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
     schemas = []
     for name, inst in ADK_AF_TOOLS.items():
         try:
-            if not inst.name:
-                inst.name = name
-                logging.debug(f"Converting tool schema for: {name}")
+            inst.name = name  # Always set the name to the dictionary key
+            logging.debug(f"Converting tool schema for: {name}")
             schema = adk_to_mcp_tool_type(inst)
             schemas.append(schema)
             logging.debug(f"Successfully converted tool schema for: {name}")
