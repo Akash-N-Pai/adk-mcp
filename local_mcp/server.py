@@ -151,202 +151,176 @@ def log_tool_call(session_id, user_id, tool_name, arguments, result):
         logging.warning(f"No valid session_id for tool call: {tool_name}")
 
 def list_jobs(owner: Optional[str] = None, status: Optional[str] = None, limit: int = 10, tool_context=None) -> dict:
-    # Get simplified session context manager
-    scm = get_simplified_session_context_manager()
+    """List jobs using global DataFrame."""
+    session_id, user_id = ensure_session_exists(tool_context)
     
-    # Extract session info from tool_context if available
-    session_id = None
-    user_id = None
-    if tool_context and hasattr(tool_context, 'htcondor_context'):
-        # Using proper ADK ToolContext
-        htcondor_ctx = tool_context.htcondor_context
-        session_id = htcondor_ctx.session_id
-        user_id = htcondor_ctx.user_id
+    try:
+        # Get jobs from global DataFrame
+        df = get_jobs_from_global_dataframe(owner=owner)
         
-        # Use user preferences from context
-        if not limit and htcondor_ctx.preferences:
-            limit = htcondor_ctx.preferences.get('default_job_limit', 10)
-    else:
-        # Fallback to old method
-        session_id, user_id = ensure_session_exists(tool_context)
+        if len(df) == 0:
+            result = {
+                "success": True,
+                "jobs": [],
+                "total_jobs": 0
+            }
+            log_tool_call(session_id, user_id, "list_jobs", {"owner": owner, "status": status, "limit": limit}, result)
+            return result
         
-        # Use user preferences for default limit if available
-        if session_id and scm.validate_session(session_id):
-            context = scm.get_session_context(session_id)
-            if context and not isinstance(context, dict):
-                user_prefs = context.get('preferences', {})
-                if not limit:
-                    limit = user_prefs.get('default_job_limit', 10)
-    
-    schedd = htcondor.Schedd()
-    constraints = []
-    if owner is not None:
-        constraints.append(f'Owner == "{owner}"')
-    if status is not None:
-        status_map = {
-            "running": 2, "idle": 1, "held": 5,
-            "completed": 4, "removed": 3,
-            "transferring_output": 6, "suspended": 7,
+        # Apply status filter if specified
+        if status is not None:
+            status_map = {
+                "running": 2, "idle": 1, "held": 5,
+                "completed": 4, "removed": 3,
+                "transferring_output": 6, "suspended": 7,
+            }
+            status_code = status_map.get(status.lower())
+            if status_code is not None and 'jobstatus' in df.columns:
+                df = df[df['jobstatus'] == status_code]
+        
+        # Convert DataFrame to list of job dictionaries
+        jobs = []
+        status_code_map = {
+            1: "Idle",
+            2: "Running", 
+            3: "Removed",
+            4: "Completed",
+            5: "Held",
+            6: "Transferring Output",
+            7: "Suspended"
         }
-        code = status_map.get(status.lower())
-        if code is not None:
-            constraints.append(f"JobStatus == {code}")
-    constraint = " and ".join(constraints) if constraints else "True"
-
-    # Only request JSON-safe fields
-    attrs = ["ClusterId", "ProcId", "JobStatus", "Owner"]
-    ads = schedd.query(constraint, projection=attrs)
-    total_jobs = len(ads)
-    
-    # Only return first 10 jobs to prevent token limit errors
-    ads = ads[:limit]
-
-    status_code_map = {
-        1: "Idle",
-        2: "Running",
-        3: "Removed",
-        4: "Completed",
-        5: "Held",
-        6: "Transferring Output",
-        7: "Suspended"
-    }
-
-    def serialize_ad(ad):
-        result = {}
-        for a in attrs:
-            v = ad.get(a)
-            # Evaluate ExprTree to primitive (avoids JSON errors)
-            if hasattr(v, "eval"):
-                try:
-                    v = v.eval()
-                except Exception:
-                    v = None
-            result[a] = v
-        # Add human-readable status
-        status_num = result.get("JobStatus")
-        result["Status"] = status_code_map.get(status_num, "Unknown")
+        
+        for _, row in df.head(limit).iterrows():
+            job_info = {
+                "ClusterId": row.get('clusterid'),
+                "ProcId": row.get('procid'),
+                "JobStatus": row.get('jobstatus'),
+                "Owner": row.get('owner'),
+                "Status": status_code_map.get(row.get('jobstatus'), "Unknown")
+            }
+            jobs.append(job_info)
+        
+        result = {
+            "success": True,
+            "jobs": jobs,
+            "total_jobs": len(df)
+        }
+        
+        log_tool_call(session_id, user_id, "list_jobs", {"owner": owner, "status": status, "limit": limit}, result)
         return result
-
-    result = {
-        "success": True, 
-        "jobs": [serialize_ad(ad) for ad in ads],
-        "total_jobs": total_jobs
-    }
-    
-    # Log the tool call
-    log_tool_call(session_id, user_id, "list_jobs", {"owner": owner, "status": status, "limit": limit}, result)
-    
-    return result
+        
+    except Exception as e:
+        result = {"success": False, "message": f"Error listing jobs: {str(e)}"}
+        log_tool_call(session_id, user_id, "list_jobs", {"owner": owner, "status": status, "limit": limit}, result)
+        return result
 
 
 def get_job_status(cluster_id: int, tool_context=None) -> dict:
-    # Get simplified session context manager
-    scm = get_simplified_session_context_manager()
-    
-    # Extract session info from tool_context if available
-    session_id = None
-    user_id = None
-    if tool_context and hasattr(tool_context, 'htcondor_context'):
-        # Using proper ADK ToolContext
-        htcondor_ctx = tool_context.htcondor_context
-        session_id = htcondor_ctx.session_id
-        user_id = htcondor_ctx.user_id
-        
-        # Update job context with this cluster_id
-        if hasattr(tool_context, 'update_job_context'):
-            tool_context.update_job_context(cluster_id)
-    else:
-        # Fallback to old method
-        session_id, user_id = ensure_session_exists(tool_context)
+    """Get job status using global DataFrame."""
+    session_id, user_id = ensure_session_exists(tool_context)
     
     try:
-        schedd = htcondor.Schedd()
-        ads = schedd.query(f"ClusterId == {cluster_id}")
-        if not ads:
+        # Get jobs from global DataFrame
+        df = get_jobs_from_global_dataframe()
+        
+        if len(df) == 0:
+            result = {"success": False, "message": "No job data available"}
+            log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
+            return result
+        
+        # Filter by cluster ID (convert to string for comparison)
+        job_df = df[df['clusterid'].astype(str) == str(cluster_id)]
+        
+        if len(job_df) == 0:
             result = {"success": False, "message": "Job not found"}
             log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
             return result
         
-        ad = ads[0]
+        # Get the first job (should be the main one)
+        row = job_df.iloc[0]
         job_info = {}
         
-        # Extract only the most useful information from the raw HTCondor output
-        useful_fields = {
-            "ClusterId": "Cluster ID",
-            "ProcId": "Process ID",
-            "JobStatus": "Job Status",
-            "Owner": "Owner",
-            "Cmd": "Command",
-            "Arguments": "Arguments",
-            "Iwd": "Working Directory",
-            "JobUniverse": "Job Universe",
-            "QDate": "Queue Date",
-            "JobStartDate": "Job Start Date",
-            "JobCurrentStartDate": "Current Start Date",
-            "RemoteHost": "Execution Host",
-            "RemoteUserCpu": "CPU Time Used",
-            "RemoteSysCpu": "System CPU Time",
-            "MemoryUsage": "Memory Used",
-            "DiskUsage": "Disk Used",
-            "RequestCpus": "Requested CPUs",
-            "RequestMemory": "Requested Memory",
-            "RequestDisk": "Requested Disk",
-            "JobPrio": "Job Priority",
-            "NumJobStarts": "Number of Starts",
-            "JobRunCount": "Run Count",
-            "ExitStatus": "Exit Status",
-            "WallClockCheckpoint": "Wall Clock Time",
-            "In": "Input File",
-            "Out": "Output File",
-            "Err": "Error File",
-            "UserLog": "Log File"
+        # Map DataFrame columns to display names
+        field_mapping = {
+            "clusterid": "Cluster ID",
+            "procid": "Process ID", 
+            "jobstatus": "Job Status",
+            "owner": "Owner",
+            "cmd": "Command",
+            "arguments": "Arguments",
+            "iwd": "Working Directory",
+            "jobuniverse": "Job Universe",
+            "qdate": "Queue Date",
+            "jobstartdate": "Job Start Date",
+            "jobcurrentstartdate": "Current Start Date",
+            "remotehost": "Execution Host",
+            "remotesusercpu": "CPU Time Used",
+            "remotesyscpu": "System CPU Time",
+            "memoryusage": "Memory Used",
+            "diskusage": "Disk Used",
+            "requestcpus": "Requested CPUs",
+            "requestmemory": "Requested Memory",
+            "requestdisk": "Requested Disk",
+            "jobprio": "Job Priority",
+            "numjobstarts": "Number of Starts",
+            "jobruncount": "Run Count",
+            "exitstatus": "Exit Status",
+            "wallclockcheckpoint": "Wall Clock Time",
+            "in": "Input File",
+            "out": "Output File",
+            "err": "Error File",
+            "userlog": "Log File"
         }
         
-        for field_name, display_name in useful_fields.items():
-            v = ad.get(field_name)
-            if hasattr(v, "eval"):
-                try:
-                    v = v.eval()
-                except Exception:
-                    v = None
-            if v is not None:
+        for col_name, display_name in field_mapping.items():
+            if col_name in row.index and pd.notna(row[col_name]):
+                v = row[col_name]
+                
                 # Format special fields
-                if field_name == "JobStatus":
+                if col_name == "jobstatus":
                     status_map = {
                         1: "Idle", 2: "Running", 3: "Removed", 4: "Completed",
                         5: "Held", 6: "Transferring Output", 7: "Suspended"
                     }
                     v = f"{v} ({status_map.get(v, 'Unknown')})"
-                elif field_name == "JobUniverse":
+                elif col_name == "jobuniverse":
                     universe_map = {
                         1: "Standard", 2: "Pipes", 3: "Linda", 4: "PVM",
                         5: "Vanilla", 6: "Scheduler", 7: "MPI", 9: "Grid",
                         10: "Java", 11: "Parallel", 12: "Local", 13: "Docker"
                     }
                     v = f"{v} ({universe_map.get(v, 'Unknown')})"
-                elif field_name in ["QDate", "JobStartDate", "JobCurrentStartDate"] and v:
+                elif col_name in ["qdate", "jobstartdate", "jobcurrentstartdate"] and v:
                     # Convert Unix timestamp to readable format
                     try:
                         v = datetime.datetime.fromtimestamp(v).isoformat()
                     except (ValueError, TypeError):
                         pass
-                elif field_name in ["RequestMemory", "MemoryUsage"] and v:
+                elif col_name in ["requestmemory", "memoryusage"] and v:
                     # Format memory with units
-                    if v >= 1024:
-                        v = f"{v} MB ({v//1024} GB)"
-                    else:
+                    try:
+                        v_num = float(v)
+                        if v_num >= 1024:
+                            v = f"{v} MB ({v_num//1024:.1f} GB)"
+                        else:
+                            v = f"{v} MB"
+                    except (ValueError, TypeError):
                         v = f"{v} MB"
-                elif field_name in ["RequestDisk", "DiskUsage"] and v:
+                elif col_name in ["requestdisk", "diskusage"] and v:
                     # Format disk with units
-                    if v >= 1024:
-                        v = f"{v} MB ({v//1024} GB)"
-                    else:
+                    try:
+                        v_num = float(v)
+                        if v_num >= 1024:
+                            v = f"{v} MB ({v_num//1024:.1f} GB)"
+                        else:
+                            v = f"{v} MB"
+                    except (ValueError, TypeError):
                         v = f"{v} MB"
-                elif field_name == "Arguments" and not v:
+                elif col_name == "arguments" and not v:
                     v = "(none)"
-                elif field_name in ["In", "Out", "Err"] and not v:
+                elif col_name in ["in", "out", "err"] and not v:
                     v = "(default)"
-                elif field_name == "WallClockCheckpoint" and v:
+                elif col_name == "wallclockcheckpoint" and v:
                     # Convert seconds to hours:minutes:seconds
                     try:
                         hours = int(v // 3600)
@@ -358,11 +332,28 @@ def get_job_status(cluster_id: int, tool_context=None) -> dict:
                 
                 job_info[display_name] = v
         
+        # Helper function to convert numpy types to JSON-serializable types
+        def convert_numpy_types(obj):
+            """Convert numpy types to JSON-serializable types"""
+            import numpy as np
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
+        
         result = {
             "success": True,
             "cluster_id": cluster_id,
-            "job_status": job_info,
-            "note": "Most useful job information extracted from HTCondor"
+            "job_status": convert_numpy_types(job_info),
+            "note": "Most useful job information extracted from global DataFrame"
         }
         
         log_tool_call(session_id, user_id, "get_job_status", {"cluster_id": cluster_id}, result)
@@ -390,37 +381,40 @@ def submit_job(submit_description: dict, tool_context=None) -> dict:
 # ===== ADVANCED JOB INFORMATION =====
 
 def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict:
-    """Get job execution history including state changes and events."""
+    """Get job execution history using global DataFrame."""
     session_id, user_id = ensure_session_exists(tool_context)
     
     try:
-        schedd = htcondor.Schedd()
-        ads = schedd.query(f"ClusterId == {cluster_id}")
-        if not ads:
+        # Get jobs from global DataFrame
+        df = get_jobs_from_global_dataframe()
+        
+        if len(df) == 0:
+            result = {"success": False, "message": "No job data available"}
+            log_tool_call(session_id, user_id, "get_job_history", {"cluster_id": cluster_id, "limit": limit}, result)
+            return result
+        
+        # Filter by cluster ID (convert to string for comparison)
+        job_df = df[df['clusterid'].astype(str) == str(cluster_id)]
+        
+        if len(job_df) == 0:
             result = {"success": False, "message": "Job not found"}
             log_tool_call(session_id, user_id, "get_job_history", {"cluster_id": cluster_id, "limit": limit}, result)
             return result
         
-        ad = ads[0]
-        job_info = {}
-        for k, v in ad.items():
-            if hasattr(v, "eval"):
-                try:
-                    v = v.eval()
-                except Exception:
-                    v = None
-            job_info[k] = v
+        # Get the first job (should be the main one)
+        row = job_df.iloc[0]
         
         # Get actual job timestamps and create realistic history
-        q_date = job_info.get("QDate")  # Queue date (submission time)
-        job_start_date = job_info.get("JobStartDate")  # When job started
-        job_current_start_date = job_info.get("JobCurrentStartDate")  # Current start time
-        completion_date = job_info.get("CompletionDate")  # When job completed
+        q_date = row.get('qdate')  # Queue date (submission time)
+        job_start_date = row.get('jobstartdate')  # When job started
+        job_current_start_date = row.get('jobcurrentstartdate')  # Current start time
+        completion_date = row.get('completiondate')  # When job completed
+        job_status = row.get('jobstatus')
         
         history_events = []
         
         # Add submission event
-        if q_date:
+        if pd.notna(q_date):
             history_events.append({
                 "timestamp": datetime.datetime.fromtimestamp(q_date).isoformat(),
                 "event": "Job submitted",
@@ -428,8 +422,8 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
             })
         
         # Add start event
-        if job_start_date or job_current_start_date:
-            start_time = job_current_start_date or job_start_date
+        if pd.notna(job_start_date) or pd.notna(job_current_start_date):
+            start_time = job_current_start_date if pd.notna(job_current_start_date) else job_start_date
             history_events.append({
                 "timestamp": datetime.datetime.fromtimestamp(start_time).isoformat(),
                 "event": "Job started",
@@ -437,7 +431,7 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
             })
         
         # Add completion event if job is completed
-        if job_info.get("JobStatus") == 4 and completion_date:  # Completed
+        if job_status == 4 and pd.notna(completion_date):  # Completed
             history_events.append({
                 "timestamp": datetime.datetime.fromtimestamp(completion_date).isoformat(),
                 "event": "Job completed",
@@ -446,19 +440,41 @@ def get_job_history(cluster_id: int, limit: int = 50, tool_context=None) -> dict
         
         # If no real timestamps, provide current status info
         if not history_events:
+            status_map = {
+                1: "Idle", 2: "Running", 3: "Removed", 4: "Completed",
+                5: "Held", 6: "Transferring Output", 7: "Suspended"
+            }
+            current_status = status_map.get(job_status, "Unknown")
             history_events.append({
                 "timestamp": datetime.datetime.now().isoformat(),
                 "event": "Current status",
-                "status": job_info.get("JobStatus", "Unknown")
+                "status": current_status
             })
+        
+        # Helper function to convert numpy types to JSON-serializable types
+        def convert_numpy_types(obj):
+            """Convert numpy types to JSON-serializable types"""
+            import numpy as np
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
         
         result = {
             "success": True,
             "cluster_id": cluster_id,
-            "current_status": job_info.get("JobStatus"),
-            "history_events": history_events[:limit],
+            "current_status": convert_numpy_types(job_status),
+            "history_events": convert_numpy_types(history_events[:limit]),
             "total_events": len(history_events),
-            "note": "History based on actual job timestamps from HTCondor"
+            "note": "History based on actual job timestamps from global DataFrame"
         }
         
         log_tool_call(session_id, user_id, "get_job_history", {"cluster_id": cluster_id, "limit": limit}, result)
@@ -1010,35 +1026,36 @@ def get_session_summary(session_id: str, tool_context=None) -> dict:
 # ===== REPORTING AND ANALYTICS =====
 
 def generate_job_report(owner: Optional[str] = None, time_range: Optional[str] = None, tool_context=None) -> dict:
-    """Generate comprehensive job report."""
+    """Generate comprehensive job report using global DataFrame."""
     session_id, user_id = ensure_session_exists(tool_context)
     
     try:
-        schedd = htcondor.Schedd()
+        # Get jobs from global DataFrame
+        df = get_jobs_from_global_dataframe(time_range=time_range, owner=owner)
         
-        # Build constraint
-        constraints = []
-        if owner:
-            constraints.append(f'Owner == "{owner}"')
-        if time_range:
-            # Parse time range (e.g., "24h", "7d", "30d")
-            if time_range.endswith('h'):
-                hours = int(time_range[:-1])
-                cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
-            elif time_range.endswith('d'):
-                days = int(time_range[:-1])
-                cutoff_time = datetime.datetime.now() - datetime.timedelta(days=days)
-            else:
-                cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=24)
-            
-            constraints.append(f'QDate > {int(cutoff_time.timestamp())}')
-        
-        constraint = " and ".join(constraints) if constraints else "True"
-        
-        # Get jobs with extended attributes
-        attrs = ["ClusterId", "ProcId", "JobStatus", "Owner", "QDate", "RemoteUserCpu", 
-                "RemoteSysCpu", "ImageSize", "MemoryUsage", "CommittedTime"]
-        jobs = schedd.query(constraint, projection=attrs)
+        if len(df) == 0:
+            result = {
+                "success": True,
+                "report": {
+                    "report_metadata": {
+                        "generated_at": datetime.datetime.now().isoformat(),
+                        "owner_filter": owner or "all",
+                        "time_range": time_range or "all",
+                        "total_jobs": 0
+                    },
+                    "summary": {
+                        "total_jobs": 0,
+                        "status_distribution": {},
+                        "total_cpu_time": 0,
+                        "total_memory_usage": 0,
+                        "average_cpu_per_job": 0,
+                        "average_memory_per_job": 0
+                    },
+                    "job_details": []
+                }
+            }
+            log_tool_call(session_id, user_id, "generate_job_report", {"owner": owner, "time_range": time_range}, result)
+            return result
         
         # Process job data
         job_data = []
@@ -1046,20 +1063,25 @@ def generate_job_report(owner: Optional[str] = None, time_range: Optional[str] =
         total_memory = 0
         status_counts = defaultdict(int)
         
-        for ad in jobs:
-            job_info = {}
-            for attr in attrs:
-                v = ad.get(attr)
-                if hasattr(v, "eval"):
-                    try:
-                        v = v.eval()
-                    except Exception:
-                        v = None
-                job_info[attr.lower()] = v
+        for _, row in df.iterrows():
+            job_info = {
+                "clusterid": row.get('clusterid'),
+                "procid": row.get('procid'),
+                "jobstatus": row.get('jobstatus'),
+                "owner": row.get('owner'),
+                "qdate": row.get('qdate'),
+                "remotesusercpu": row.get('remotesusercpu'),
+                "remotesyscpu": row.get('remotesyscpu'),
+                "imagesize": row.get('imagesize'),
+                "memoryusage": row.get('memoryusage'),
+                "committedtime": row.get('committedtime')
+            }
             
             # Calculate resource usage
-            cpu_time = job_info.get("remoteusercpu", 0) or 0
-            memory_usage = job_info.get("memoryusage", 0) or 0
+            cpu_time = pd.to_numeric(job_info.get("remotesusercpu"), errors='coerce')
+            memory_usage = pd.to_numeric(job_info.get("memoryusage"), errors='coerce')
+            cpu_time = 0 if pd.isna(cpu_time) else cpu_time
+            memory_usage = 0 if pd.isna(memory_usage) else memory_usage
             
             total_cpu += cpu_time
             total_memory += memory_usage
@@ -1095,6 +1117,7 @@ def generate_job_report(owner: Optional[str] = None, time_range: Optional[str] =
         
         log_tool_call(session_id, user_id, "generate_job_report", {"owner": owner, "time_range": time_range}, result)
         return result
+        
     except Exception as e:
         result = {"success": False, "message": f"Error generating job report: {str(e)}"}
         log_tool_call(session_id, user_id, "generate_job_report", {"owner": owner, "time_range": time_range}, result)
@@ -1102,28 +1125,34 @@ def generate_job_report(owner: Optional[str] = None, time_range: Optional[str] =
 
 
 def get_utilization_stats(time_range: Optional[str] = "24h", tool_context=None) -> dict:
-    """Get resource utilization statistics over time."""
+    """Get resource utilization statistics using global DataFrame."""
     session_id, user_id = ensure_session_exists(tool_context)
     
     try:
-        schedd = htcondor.Schedd()
+        # Get jobs from global DataFrame
+        df = get_jobs_from_global_dataframe(time_range=time_range)
         
-        # Calculate time range
-        if time_range.endswith('h'):
-            hours = int(time_range[:-1])
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
-        elif time_range.endswith('d'):
-            days = int(time_range[:-1])
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=days)
-        else:
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=24)
-        
-        # Get jobs in time range
-        jobs = schedd.query(f'QDate > {int(cutoff_time.timestamp())}', 
-                           projection=["JobStatus", "RemoteUserCpu", "MemoryUsage", "QDate", "CompletionDate"])
+        if len(df) == 0:
+            result = {
+                "success": True,
+                "utilization_stats": {
+                    "time_range": time_range,
+                    "total_jobs": 0,
+                    "completed_jobs": 0,
+                    "completion_rate": 0,
+                    "total_cpu_time": 0,
+                    "total_memory_usage": 0,
+                    "average_completion_time": 0,
+                    "cpu_utilization": 0,
+                    "memory_utilization": 0,
+                    "note": "No job data available for the specified time range"
+                }
+            }
+            log_tool_call(session_id, user_id, "get_utilization_stats", {"time_range": time_range}, result)
+            return result
         
         # Calculate utilization metrics
-        total_jobs = len(jobs)
+        total_jobs = len(df)
         completed_jobs = 0
         total_cpu_time = 0
         total_memory_usage = 0
@@ -1131,46 +1160,18 @@ def get_utilization_stats(time_range: Optional[str] = "24h", tool_context=None) 
         
         completion_times = []
         
-        for ad in jobs:
-            status = ad.get("JobStatus")
-            cpu_time = ad.get("RemoteUserCpu", 0)
-            memory_usage = ad.get("MemoryUsage", 0)
-            q_date = ad.get("QDate")
-            completion_date = ad.get("CompletionDate")
-            
-            if hasattr(status, "eval"):
-                try:
-                    status = status.eval()
-                except Exception:
-                    status = None
-            
-            if hasattr(cpu_time, "eval"):
-                try:
-                    cpu_time = cpu_time.eval() or 0
-                except Exception:
-                    cpu_time = 0
-            
-            if hasattr(memory_usage, "eval"):
-                try:
-                    memory_usage = memory_usage.eval() or 0
-                except Exception:
-                    memory_usage = 0
-            
-            if hasattr(q_date, "eval"):
-                try:
-                    q_date = q_date.eval()
-                except Exception:
-                    q_date = None
-            
-            if hasattr(completion_date, "eval"):
-                try:
-                    completion_date = completion_date.eval()
-                except Exception:
-                    completion_date = None
+        for _, row in df.iterrows():
+            status = row.get('jobstatus')
+            cpu_time = pd.to_numeric(row.get('remotesusercpu'), errors='coerce')
+            memory_usage = pd.to_numeric(row.get('memoryusage'), errors='coerce')
+            cpu_time = 0 if pd.isna(cpu_time) else cpu_time
+            memory_usage = 0 if pd.isna(memory_usage) else memory_usage
+            q_date = row.get('qdate')
+            completion_date = row.get('completiondate')
             
             if status == 4:  # Completed
                 completed_jobs += 1
-                if q_date and completion_date:
+                if pd.notna(q_date) and pd.notna(completion_date):
                     completion_time = completion_date - q_date
                     completion_times.append(completion_time)
             
@@ -1181,7 +1182,7 @@ def get_utilization_stats(time_range: Optional[str] = "24h", tool_context=None) 
         if completion_times:
             avg_completion_time = sum(completion_times) / len(completion_times)
         
-        # Get current system capacity
+        # Get current system capacity (still need to query collector for this)
         collector = htcondor.Collector()
         machines = collector.query(htcondor.AdTypes.Startd, "True", projection=["Cpus", "Memory"])
         
@@ -1208,7 +1209,8 @@ def get_utilization_stats(time_range: Optional[str] = "24h", tool_context=None) 
             total_memory += memory
         
         # Calculate utilization percentages
-        cpu_utilization = (total_cpu_time / (total_cpus * int(time_range[:-1]) * 3600)) * 100 if total_cpus > 0 else 0
+        time_hours = int(time_range[:-1]) if time_range.endswith('h') else int(time_range[:-1]) * 24
+        cpu_utilization = (total_cpu_time / (total_cpus * time_hours * 3600)) * 100 if total_cpus > 0 else 0
         memory_utilization = (total_memory_usage / total_memory) * 100 if total_memory > 0 else 0
         
         result = {
@@ -1240,30 +1242,28 @@ def get_utilization_stats(time_range: Optional[str] = "24h", tool_context=None) 
 
 
 def export_job_data(format: str = "json", filters: Optional[dict] = None, tool_context=None) -> dict:
-    """Export job data in various formats."""
-    # Get proper ADK context
-    context_manager = get_context_manager()
-    
-    # Extract session info from tool_context if available
-    session_id = None
-    user_id = None
-    if tool_context and hasattr(tool_context, 'htcondor_context'):
-        # Using proper ADK ToolContext
-        htcondor_ctx = tool_context.htcondor_context
-        session_id = htcondor_ctx.session_id
-        user_id = htcondor_ctx.user_id
-    else:
-        # Fallback to old method
-        session_id, user_id = ensure_session_exists(tool_context)
+    """Export job data in various formats using global DataFrame."""
+    session_id, user_id = ensure_session_exists(tool_context)
     
     try:
-        schedd = htcondor.Schedd()
+        # Get jobs from global DataFrame
+        df = get_jobs_from_global_dataframe()
         
-        # Build constraint from filters
-        constraints = []
+        if len(df) == 0:
+            result = {
+                "success": True,
+                "format": format,
+                "filters": filters or {},
+                "total_jobs": 0,
+                "data": [] if format.lower() == "json" else "" if format.lower() == "csv" else {}
+            }
+            log_tool_call(session_id, user_id, "export_job_data", {"format": format, "filters": filters}, result)
+            return result
+        
+        # Apply filters
         if filters:
             if "owner" in filters:
-                constraints.append(f'Owner == "{filters["owner"]}"')
+                df = df[df['owner'] == filters["owner"]]
             if "status" in filters:
                 status_map = {
                     "running": 2, "idle": 1, "held": 5,
@@ -1271,29 +1271,24 @@ def export_job_data(format: str = "json", filters: Optional[dict] = None, tool_c
                 }
                 status_code = status_map.get(filters["status"].lower())
                 if status_code is not None:
-                    constraints.append(f"JobStatus == {status_code}")
+                    df = df[df['jobstatus'] == status_code]
             if "min_cpu" in filters:
-                constraints.append(f"RemoteUserCpu >= {filters['min_cpu']}")
+                df = df[pd.to_numeric(df['remotesusercpu'], errors='coerce').replace([np.inf, -np.inf], np.nan).fillna(0) >= filters['min_cpu']]
         
-        constraint = " and ".join(constraints) if constraints else "True"
-        
-        # Get job data
-        attrs = ["ClusterId", "ProcId", "JobStatus", "Owner", "QDate", "RemoteUserCpu", 
-                "MemoryUsage", "ImageSize", "CommittedTime"]
-        jobs = schedd.query(constraint, projection=attrs)
-        
-        # Process job data
+        # Convert DataFrame to list of dictionaries
         job_data = []
-        for ad in jobs:
-            job_info = {}
-            for attr in attrs:
-                v = ad.get(attr)
-                if hasattr(v, "eval"):
-                    try:
-                        v = v.eval()
-                    except Exception:
-                        v = None
-                job_info[attr.lower()] = v
+        for _, row in df.iterrows():
+            job_info = {
+                "clusterid": row.get('clusterid'),
+                "procid": row.get('procid'),
+                "jobstatus": row.get('jobstatus'),
+                "owner": row.get('owner'),
+                "qdate": row.get('qdate'),
+                "remotesusercpu": row.get('remotesusercpu'),
+                "memoryusage": row.get('memoryusage'),
+                "imagesize": row.get('imagesize'),
+                "committedtime": row.get('committedtime')
+            }
             job_data.append(job_info)
         
         # Format data based on requested format
@@ -1321,8 +1316,10 @@ def export_job_data(format: str = "json", filters: Optional[dict] = None, tool_c
                 status = job.get("jobstatus")
                 status_counts[status] += 1
                 
-                cpu = job.get("remoteusercpu", 0) or 0
-                memory = job.get("memoryusage", 0) or 0
+                cpu = pd.to_numeric(job.get("remotesusercpu"), errors='coerce')
+                memory = pd.to_numeric(job.get("memoryusage"), errors='coerce')
+                cpu = 0 if pd.isna(cpu) else cpu
+                memory = 0 if pd.isna(memory) else memory
                 total_cpu += cpu
                 total_memory += memory
             
@@ -1346,6 +1343,7 @@ def export_job_data(format: str = "json", filters: Optional[dict] = None, tool_c
         
         log_tool_call(session_id, user_id, "export_job_data", {"format": format, "filters": filters}, result)
         return result
+        
     except Exception as e:
         result = {"success": False, "message": f"Error exporting job data: {str(e)}"}
         log_tool_call(session_id, user_id, "export_job_data", {"format": format, "filters": filters}, result)
@@ -1610,12 +1608,17 @@ def generate_advanced_job_report(
         def convert_numpy_types(obj):
             """Convert numpy types to JSON-serializable types"""
             import numpy as np
+            import pandas as pd
             if isinstance(obj, np.integer):
                 return int(obj)
             elif isinstance(obj, np.floating):
                 return float(obj)
             elif isinstance(obj, np.ndarray):
                 return obj.tolist()
+            elif isinstance(obj, pd.Timestamp):
+                return obj.isoformat()
+            elif pd.isna(obj):  # Handle NaT, NaN, etc.
+                return None
             elif isinstance(obj, dict):
                 return {key: convert_numpy_types(value) for key, value in obj.items()}
             elif isinstance(obj, list):
@@ -1708,7 +1711,7 @@ def generate_advanced_job_report(
         result = {
             "success": True,
             "output_format": output_format,
-            "report": formatted_data
+            "report": convert_numpy_types(formatted_data)
         }
         
         log_tool_call(session_id, user_id, "generate_advanced_job_report", 
