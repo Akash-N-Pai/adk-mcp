@@ -40,6 +40,10 @@ You have access to persistent memory and session context. Use this information t
 - `get_utilization_stats(time_range)` - Get resource utilization statistics
 - `export_job_data(format, filters)` - Export job data in various formats
 
+### HTCondor DataFrame Tools
+- `get_dataframe_status()` - Get the status of the global DataFrame (Note: DataFrame is automatically initialized when creating or continuing sessions)
+- `refresh_dataframe(time_range)` - Force refresh the global DataFrame
+
 
 
 ## Important Instructions:
@@ -135,6 +139,24 @@ When user asks: "Show me wait times for my jobs" or "Queue wait times for user [
 When user asks: "Export job data as CSV"
 - Call: `export_job_data(format="csv")`
 - Display the exported data or provide download information
+
+### HTCondor DataFrame Tool Usage Examples:
+
+When user asks: "Check DataFrame status" or "Get DataFrame info" or "Show DataFrame status"
+- Call: `get_dataframe_status()`
+- Display DataFrame status and basic statistics
+
+When user asks: "Refresh DataFrame" or "Update DataFrame" or "Reload job data"
+- Call: `refresh_dataframe(time_range="24h")`
+- Display DataFrame refresh results with updated statistics
+
+**Note**: The HTCondor DataFrame is automatically initialized whenever:
+- A new session is created (`create_session`)
+- A fresh session is started (`start_fresh_session`) 
+- The last session is continued (`continue_last_session`)
+- A specific session is continued (`continue_specific_session`)
+
+The session response will include `dataframe_initialized` and `dataframe_info` fields showing the initialization status and basic job statistics.
 
 
 

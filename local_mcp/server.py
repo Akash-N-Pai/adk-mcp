@@ -5,6 +5,8 @@ import os
 import datetime
 import getpass
 import sqlite3
+import pandas as pd
+import numpy as np
 from collections import defaultdict
 
 import mcp.server.stdio
@@ -20,17 +22,19 @@ from typing import Optional
 # Import simplified session context management - handle both relative and absolute imports
 try:
     from .session_context_simple import get_simplified_session_context_manager
+    from .htcondor_dataframe import HTCondorDataFrame
 except ImportError:
     # When running server.py directly, use absolute import
     import sys
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
     from local_mcp.session_context_simple import get_simplified_session_context_manager
+    from local_mcp.htcondor_dataframe import HTCondorDataFrame
 
 load_dotenv()
 
 LOG_FILE_PATH = os.path.join(os.path.dirname(__file__), "mcp_server_activity.log")
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
     handlers=[logging.FileHandler(LOG_FILE_PATH, mode="w")],
 )
@@ -40,6 +44,11 @@ app = Server("htcondor-mcp-server")
 
 # Initialize simplified session context management
 session_context_manager = get_simplified_session_context_manager()
+
+# Global DataFrame management
+import threading
+_global_dataframe_instance = None
+_global_dataframe_lock = threading.Lock()
 
 def get_session_context(tool_context=None):
     """Extract session context from tool context."""
@@ -126,7 +135,7 @@ def ensure_session_exists(tool_context=None, continue_last_session=True):
 
 def log_tool_call(session_id, user_id, tool_name, arguments, result):
     """Log tool call to conversation history."""
-    logging.info(f"log_tool_call: session_id={session_id}, user_id={user_id}, tool_name={tool_name}")
+    logging.debug(f"Tool call: {tool_name} for session {session_id}")
     if session_id and session_context_manager.validate_session(session_id):
         try:
             tool_call_data = {
@@ -135,7 +144,7 @@ def log_tool_call(session_id, user_id, tool_name, arguments, result):
                 "result": result
             }
             session_context_manager.add_message(session_id, "tool_call", str(tool_call_data))
-            logging.info(f"Successfully logged tool call for session {session_id}")
+            logging.debug(f"Tool call logged for session {session_id}")
         except Exception as e:
             logging.error(f"Failed to log tool call: {e}")
     else:
@@ -475,11 +484,17 @@ def create_session(user_id: str, metadata: Optional[dict] = None, tool_context=N
     
     try:
         session_id = scm.create_session(user_id, metadata)
+        
+        # Automatically initialize global DataFrame for new session
+        dataframe_result = initialize_global_dataframe()
+        
         result = {
             "success": True,
             "session_id": session_id,
             "user_id": user_id,
-            "message": f"Session created successfully for user {user_id}"
+            "message": f"Session created successfully for user {user_id}",
+            "dataframe_initialized": dataframe_result["success"],
+            "dataframe_info": dataframe_result.get("data", {})
         }
         
         log_tool_call(session_id, user_id, "create_session", {"user_id": user_id, "metadata": metadata}, result)
@@ -505,12 +520,18 @@ def start_fresh_session(user_id: Optional[str] = None, metadata: Optional[dict] 
     
     try:
         session_id = scm.create_session(user_id, metadata or {})
+        
+        # Automatically initialize global DataFrame for fresh session
+        dataframe_result = initialize_global_dataframe()
+        
         result = {
             "success": True,
             "session_id": session_id,
             "user_id": user_id,
             "message": f"Fresh session created successfully for user {user_id}",
-            "note": "This is a new session, not continuing any previous session"
+            "note": "This is a new session, not continuing any previous session",
+            "dataframe_initialized": dataframe_result["success"],
+            "dataframe_info": dataframe_result.get("data", {})
         }
         
         log_tool_call(session_id, user_id, "start_fresh_session", {"user_id": user_id, "metadata": metadata}, result)
@@ -715,11 +736,16 @@ def continue_last_session(user_id: Optional[str] = None, tool_context=None) -> d
             session_id = last_session[0]
             session_info = scm.get_session_context(session_id)
             
+            # Automatically initialize global DataFrame when continuing session
+            dataframe_result = initialize_global_dataframe()
+            
             result = {
                 "success": True,
                 "message": f"Continuing session {session_id}",
                 "session_id": session_id,
-                "session_info": session_info
+                "session_info": session_info,
+                "dataframe_initialized": dataframe_result["success"],
+                "dataframe_info": dataframe_result.get("data", {})
             }
         else:
             result = {
@@ -767,12 +793,17 @@ def continue_specific_session(session_id: str, user_id: Optional[str] = None, to
         # Update session activity
         scm.update_session_activity(session_id)
         
+        # Automatically initialize global DataFrame when continuing specific session
+        dataframe_result = initialize_global_dataframe()
+        
         result = {
             "success": True,
             "session_id": session_id,
             "user_id": user_id,
             "session_context": session_context,
-            "message": f"Successfully switched to session {session_id}"
+            "message": f"Successfully switched to session {session_id}",
+            "dataframe_initialized": dataframe_result["success"],
+            "dataframe_info": dataframe_result.get("data", {})
         }
         
         log_tool_call(session_id, user_id, "continue_specific_session", {"session_id": session_id, "user_id": user_id}, result)
@@ -1327,131 +1358,118 @@ def generate_advanced_job_report(
     report_type: str = "comprehensive",
     include_trends: bool = True,
     include_predictions: bool = False,
-    output_format: str = "json",
+    output_format: str = "text",
     tool_context=None
 ) -> dict:
-    """Generate advanced job report with comprehensive analytics."""
+    """Generate advanced job report with comprehensive analytics using global DataFrame."""
     session_id, user_id = ensure_session_exists(tool_context)
     
     try:
-        schedd = htcondor.Schedd()
+        # Get jobs from global DataFrame
+        df = get_jobs_from_global_dataframe(time_range=time_range, owner=owner)
         
-        # Calculate time range
-        if time_range.endswith('h'):
-            hours = int(time_range[:-1])
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
-        elif time_range.endswith('d'):
-            days = int(time_range[:-1])
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=days)
-        elif time_range.endswith('w'):
-            weeks = int(time_range[:-1])
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(weeks=weeks)
-        else:
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=7)
+        if len(df) == 0:
+            result = {"success": True, "message": "No job data available for the specified criteria", "data": {}}
+            log_tool_call(session_id, user_id, "generate_advanced_job_report", 
+                         {"owner": owner, "time_range": time_range, "report_type": report_type}, result)
+            return result
         
-        # Build constraint
-        constraints = [f'QDate > {int(cutoff_time.timestamp())}']
-        if owner:
-            constraints.append(f'Owner == "{owner}"')
+        # Process DataFrame data with enhanced metrics
+        total_cpu = pd.to_numeric(df['remotesusercpu'], errors='coerce').fillna(0).sum() if 'remotesusercpu' in df.columns else 0
+        total_memory = pd.to_numeric(df['memoryusage'], errors='coerce').fillna(0).sum() if 'memoryusage' in df.columns else 0
+        total_disk = pd.to_numeric(df['imagesize'], errors='coerce').fillna(0).sum() if 'imagesize' in df.columns else 0
         
-        constraint = " and ".join(constraints)
+        # Status counts
+        status_counts = df['jobstatus'].value_counts().to_dict() if 'jobstatus' in df.columns else {}
         
-        # Get comprehensive job attributes
-        attrs = [
-            "ClusterId", "ProcId", "JobStatus", "Owner", "QDate", "CompletionDate",
-            "RemoteUserCpu", "RemoteSysCpu", "ImageSize", "MemoryUsage", "CommittedTime",
-            "RequestCpus", "RequestMemory", "RequestDisk", "Requirements", "Rank",
-            "LastMatchTime", "LastSuspensionTime", "NumJobStarts", "NumJobReconnects",
-            "NumJobReleases", "NumJobMatches", "NumJobMatchesRejected", "NumJobMatchesRejectedTotal",
-            "JobPrio", "NiceUser", "ExitCode", "ExitBySignal", "ExitSignal",
-            "LastJobLeaseRenewal", "LastJobStatusUpdate", "LastJobStatusUpdateTime"
-        ]
+        # Owner statistics
+        owner_stats = {}
+        if 'owner' in df.columns:
+            for owner in df['owner'].unique():
+                owner_df = df[df['owner'] == owner]
+                # Convert to numeric values to avoid string division issues
+                cpu_sum = pd.to_numeric(owner_df['remotesusercpu'], errors='coerce').fillna(0).sum() if 'remotesusercpu' in owner_df.columns else 0
+                memory_sum = pd.to_numeric(owner_df['memoryusage'], errors='coerce').fillna(0).sum() if 'memoryusage' in owner_df.columns else 0
+                
+                owner_stats[owner] = {
+                    "jobs": len(owner_df),
+                    "cpu": cpu_sum,
+                    "memory": memory_sum,
+                    "completed": len(owner_df[owner_df['jobstatus'] == 4]) if 'jobstatus' in owner_df.columns else 0,
+                    "failed": len(owner_df[owner_df['jobstatus'].isin([3, 5, 7])]) if 'jobstatus' in owner_df.columns else 0
+                }
         
-        jobs = schedd.query(constraint, projection=attrs)
+        # Time distribution analysis
+        hourly_distribution = {}
+        daily_distribution = {}
+        if 'qdate' in df.columns:
+            # Convert timestamps to datetime for analysis
+            df['qdate_datetime'] = pd.to_datetime(df['qdate'], unit='s', errors='coerce')
+            hourly_distribution = df['qdate_datetime'].dt.hour.value_counts().to_dict()
+            daily_distribution = df['qdate_datetime'].dt.date.value_counts().to_dict()
+            daily_distribution = {str(k): v for k, v in daily_distribution.items()}
         
-        # Process job data with enhanced metrics
-        job_data = []
-        total_cpu = 0
-        total_memory = 0
-        total_disk = 0
-        status_counts = defaultdict(int)
-        owner_stats = defaultdict(lambda: {"jobs": 0, "cpu": 0, "memory": 0, "completed": 0, "failed": 0})
-        hourly_distribution = defaultdict(int)
-        daily_distribution = defaultdict(int)
+        # Completion times
         completion_times = []
-        failure_reasons = defaultdict(int)
-        resource_efficiency = []
+        if 'qdate' in df.columns and 'completiondate' in df.columns:
+            completed_jobs = df[df['jobstatus'] == 4]
+            completion_times = (completed_jobs['completiondate'] - completed_jobs['qdate']).dropna().tolist()
         
-        for ad in jobs:
-            job_info = {}
-            for attr in attrs:
-                v = ad.get(attr)
-                if hasattr(v, "eval"):
-                    try:
-                        v = v.eval()
-                    except Exception:
-                        v = None
-                job_info[attr.lower()] = v
-            
-            # Calculate enhanced metrics
-            cpu_time = job_info.get("remoteusercpu", 0) or 0
-            memory_usage = job_info.get("memoryusage", 0) or 0
-            disk_usage = job_info.get("imagesize", 0) or 0
-            q_date = job_info.get("qdate")
-            completion_date = job_info.get("completiondate")
-            status = job_info.get("jobstatus")
-            owner = job_info.get("owner", "unknown")
-            exit_code = job_info.get("exitcode")
-            
-            total_cpu += cpu_time
-            total_memory += memory_usage
-            total_disk += disk_usage
-            status_counts[status] += 1
-            
-            # Owner statistics
-            owner_stats[owner]["jobs"] += 1
-            owner_stats[owner]["cpu"] += cpu_time
-            owner_stats[owner]["memory"] += memory_usage
-            
-            if status == 4:  # Completed
-                owner_stats[owner]["completed"] += 1
-                if q_date and completion_date:
-                    completion_time = completion_date - q_date
-                    completion_times.append(completion_time)
-            elif status in [3, 5, 7]:  # Removed, Held, or Suspended
-                owner_stats[owner]["failed"] += 1
-                if exit_code:
-                    failure_reasons[exit_code] += 1
-            
-            # Time distribution analysis
-            if q_date:
-                q_datetime = datetime.datetime.fromtimestamp(q_date)
-                hourly_distribution[q_datetime.hour] += 1
-                daily_distribution[q_datetime.strftime("%Y-%m-%d")] += 1
-            
-            # Resource efficiency analysis
-            requested_cpus = job_info.get("requestcpus", 1) or 1
-            requested_memory = job_info.get("requestmemory", 0) or 0
-            if requested_cpus > 0 and requested_memory > 0:
-                cpu_efficiency = cpu_time / requested_cpus if requested_cpus > 0 else 0
-                memory_efficiency = memory_usage / requested_memory if requested_memory > 0 else 0
-                resource_efficiency.append({
-                    "cluster_id": job_info.get("clusterid"),
-                    "cpu_efficiency": cpu_efficiency,
-                    "memory_efficiency": memory_efficiency,
-                    "overall_efficiency": (cpu_efficiency + memory_efficiency) / 2
-                })
-            
-            job_data.append(job_info)
+        # Failure reasons
+        failure_reasons = {}
+        if 'exitcode' in df.columns:
+            failed_jobs = df[df['jobstatus'].isin([3, 5, 7])]
+            failure_reasons = failed_jobs['exitcode'].value_counts().to_dict()
+        
+        # Resource efficiency analysis
+        resource_efficiency = []
+        if 'remotesusercpu' in df.columns and 'requestcpus' in df.columns and 'memoryusage' in df.columns and 'requestmemory' in df.columns:
+            efficiency_df = df[df['requestcpus'] > 0]
+            for _, row in efficiency_df.iterrows():
+                try:
+                    # Convert to numeric values, handling any string values
+                    remotesusercpu = pd.to_numeric(row['remotesusercpu'], errors='coerce') or 0
+                    requestcpus = pd.to_numeric(row['requestcpus'], errors='coerce') or 1
+                    memoryusage = pd.to_numeric(row['memoryusage'], errors='coerce') or 0
+                    requestmemory = pd.to_numeric(row['requestmemory'], errors='coerce') or 1
+                    
+                    cpu_efficiency = remotesusercpu / requestcpus if requestcpus > 0 else 0
+                    memory_efficiency = memoryusage / requestmemory if requestmemory > 0 else 0
+                    resource_efficiency.append({
+                        "cluster_id": row.get('clusterid'),
+                        "cpu_efficiency": cpu_efficiency,
+                        "memory_efficiency": memory_efficiency,
+                        "overall_efficiency": (cpu_efficiency + memory_efficiency) / 2
+                    })
+                except (ValueError, TypeError, ZeroDivisionError):
+                    # Skip this row if there are conversion issues
+                    continue
         
         # Calculate advanced metrics
         avg_completion_time = sum(completion_times) / len(completion_times) if completion_times else 0
-        # Success rate: only completed jobs (status 4) are considered successful
-        # Failed jobs include: removed (3), held (5), and suspended (7)
-        success_rate = (status_counts.get(4, 0) / len(job_data)) * 100 if job_data else 0
+        
+        # Enhanced job status analysis
+        total_jobs = len(df)
+        completed_jobs = status_counts.get(4, 0)
+        running_jobs = status_counts.get(2, 0)
+        idle_jobs = status_counts.get(1, 0)
+        removed_jobs = status_counts.get(3, 0)
+        held_jobs = status_counts.get(5, 0)
+        suspended_jobs = status_counts.get(7, 0)
+        
+        # Calculate final state jobs (completed + failed)
+        final_jobs = completed_jobs + removed_jobs + held_jobs + suspended_jobs
+        
+        # Enhanced success rate calculation (only final states)
+        success_rate = (completed_jobs / final_jobs * 100) if final_jobs > 0 else 0
+        
+        # Additional metrics
+        active_jobs = running_jobs + idle_jobs
+        active_jobs_percentage = (active_jobs / total_jobs * 100) if total_jobs > 0 else 0
+        failure_rate = ((removed_jobs + held_jobs + suspended_jobs) / total_jobs * 100) if total_jobs > 0 else 0
+        completion_rate = (completed_jobs / total_jobs * 100) if total_jobs > 0 else 0
         
         # Resource utilization analysis
-        total_jobs = len(job_data)
         avg_cpu_per_job = total_cpu / total_jobs if total_jobs > 0 else 0
         avg_memory_per_job = total_memory / total_jobs if total_jobs > 0 else 0
         avg_disk_per_job = total_disk / total_jobs if total_jobs > 0 else 0
@@ -1490,6 +1508,22 @@ def generate_advanced_job_report(
                 top_failure = max(failure_reasons.items(), key=lambda x: x[1])
                 performance_insights.append(f"Most common failure reason: Exit code {top_failure[0]} ({top_failure[1]} occurrences)")
         
+        # Calculate cutoff time for analysis duration
+        if time_range:
+            if time_range.endswith('h'):
+                hours = int(time_range[:-1])
+                cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
+            elif time_range.endswith('d'):
+                days = int(time_range[:-1])
+                cutoff_time = datetime.datetime.now() - datetime.timedelta(days=days)
+            elif time_range.endswith('w'):
+                weeks = int(time_range[:-1])
+                cutoff_time = datetime.datetime.now() - datetime.timedelta(weeks=weeks)
+            else:
+                cutoff_time = datetime.datetime.now() - datetime.timedelta(days=7)
+        else:
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=7)
+        
         # Generate comprehensive report
         report = {
             "report_metadata": {
@@ -1504,6 +1538,11 @@ def generate_advanced_job_report(
                 "total_jobs": total_jobs,
                 "status_distribution": dict(status_counts),
                 "success_rate_percent": success_rate,
+                "active_jobs": active_jobs,
+                "active_jobs_percentage": active_jobs_percentage,
+                "failure_rate_percent": failure_rate,
+                "completion_rate_percent": completion_rate,
+                "final_jobs": final_jobs,
                 "total_cpu_time": total_cpu,
                 "total_memory_usage_mb": total_memory,
                 "total_disk_usage_mb": total_disk,
@@ -1552,6 +1591,13 @@ def generate_advanced_job_report(
         if performance_insights:
             report["performance_insights"] = performance_insights
         
+        # Create job_data from DataFrame for detailed reports
+        job_data = []
+        if report_type in ["comprehensive", "summary"]:
+            # Convert DataFrame rows to dictionaries
+            sample_df = df.head(200 if report_type == "comprehensive" else 50)
+            job_data = sample_df.to_dict('records')
+        
         # Include detailed job data based on report type
         if report_type == "comprehensive":
             report["job_details"] = job_data[:200]  # Limit to prevent large responses
@@ -1560,9 +1606,26 @@ def generate_advanced_job_report(
         else:  # minimal
             report["job_details"] = []
         
+        # Helper function to convert numpy types to JSON-serializable types
+        def convert_numpy_types(obj):
+            """Convert numpy types to JSON-serializable types"""
+            import numpy as np
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
+        
         # Process output format
         if output_format.lower() == "json":
-            formatted_data = report
+            formatted_data = convert_numpy_types(report)
         elif output_format.lower() == "csv":
             # Convert job details to CSV format
             if report.get("job_details"):
@@ -1581,6 +1644,64 @@ def generate_advanced_job_report(
                 "owner_analysis": report.get("owner_analysis", {}),
                 "performance_insights": report.get("performance_insights", [])
             }
+        elif output_format.lower() == "text":
+            # Convert report to human-readable text format
+            text_lines = []
+            text_lines.append("=== ADVANCED JOB REPORT ===")
+            text_lines.append(f"Generated: {report['report_metadata']['generated_at']}")
+            text_lines.append(f"Time Range: {report['report_metadata']['time_range']}")
+            text_lines.append(f"Report Type: {report['report_metadata']['report_type']}")
+            text_lines.append("")
+            
+            # Summary section
+            summary = report.get('summary', {})
+            text_lines.append("--- SUMMARY ---")
+            text_lines.append(f"Total Jobs: {summary.get('total_jobs', 'N/A')}")
+            text_lines.append(f"Success Rate: {summary.get('success_rate_percent', 'N/A'):.2f}% (of final jobs)")
+            text_lines.append(f"Active Jobs: {summary.get('active_jobs', 'N/A')} ({summary.get('active_jobs_percentage', 'N/A'):.2f}%)")
+            text_lines.append(f"Failure Rate: {summary.get('failure_rate_percent', 'N/A'):.2f}%")
+            text_lines.append(f"Completion Rate: {summary.get('completion_rate_percent', 'N/A'):.2f}%")
+            text_lines.append(f"Final Jobs: {summary.get('final_jobs', 'N/A')} (completed + failed)")
+            text_lines.append(f"Total CPU Time: {summary.get('total_cpu_time', 'N/A'):.2f}")
+            text_lines.append(f"Total Memory Usage: {summary.get('total_memory_usage_mb', 'N/A'):.2f} MB")
+            text_lines.append(f"Average Completion Time: {summary.get('average_completion_time_seconds', 'N/A'):.2f} seconds")
+            text_lines.append("")
+            
+            # Enhanced status distribution with descriptions
+            if summary.get('status_distribution'):
+                text_lines.append("--- STATUS DISTRIBUTION ---")
+                status_descriptions = {
+                    1: "Idle (waiting)",
+                    2: "Running",
+                    3: "Removed",
+                    4: "Completed",
+                    5: "Held",
+                    7: "Suspended"
+                }
+                for status, count in summary['status_distribution'].items():
+                    desc = status_descriptions.get(status, "Unknown")
+                    percentage = (count / summary.get('total_jobs', 1) * 100) if summary.get('total_jobs', 0) > 0 else 0
+                    text_lines.append(f"Status {status} ({desc}): {count} jobs ({percentage:.2f}%)")
+                text_lines.append("")
+            
+            # Owner analysis
+            if report.get('owner_analysis'):
+                text_lines.append("--- OWNER ANALYSIS ---")
+                for owner, stats in report['owner_analysis'].items():
+                    text_lines.append(f"Owner: {owner}")
+                    text_lines.append(f"  Total Jobs: {stats.get('total_jobs', 'N/A')}")
+                    text_lines.append(f"  Success Rate: {stats.get('success_rate', 'N/A'):.2f}%")
+                    text_lines.append(f"  Total CPU Time: {stats.get('total_cpu_time', 'N/A'):.2f}")
+                    text_lines.append("")
+            
+            # Performance insights
+            if report.get('performance_insights'):
+                text_lines.append("--- PERFORMANCE INSIGHTS ---")
+                for insight in report['performance_insights']:
+                    text_lines.append(f"• {insight}")
+                text_lines.append("")
+            
+            formatted_data = "\n".join(text_lines)
         else:
             return {"success": False, "message": f"Unsupported output format: {output_format}"}
         
@@ -1608,81 +1729,75 @@ def generate_queue_wait_time_histogram(
     status_filter: Optional[str] = None,
     tool_context=None
 ) -> dict:
-    """Generate histogram of queue wait times for jobs."""
+    """Generate histogram of queue wait times for jobs using global DataFrame."""
     session_id, user_id = ensure_session_exists(tool_context)
     
     try:
-        schedd = htcondor.Schedd()
+        # Get jobs from global DataFrame
+        df = get_jobs_from_global_dataframe(time_range=time_range, owner=owner)
         
-        # Calculate time range
-        if time_range.endswith('h'):
-            hours = int(time_range[:-1])
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
-        elif time_range.endswith('d'):
-            days = int(time_range[:-1])
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=days)
-        elif time_range.endswith('w'):
-            weeks = int(time_range[:-1])
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(weeks=weeks)
-        else:
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(days=30)
+        if len(df) == 0:
+            result = {
+                "success": True,
+                "message": "No job data available for the specified criteria",
+                "time_range": time_range,
+                "total_jobs_analyzed": 0,
+                "jobs_with_wait_times": 0,
+                "histogram": {},
+                "statistics": {}
+            }
+            log_tool_call(session_id, user_id, "generate_queue_wait_time_histogram", 
+                         {"time_range": time_range, "bin_count": bin_count, "owner": owner, "status_filter": status_filter}, result)
+            return result
         
-        # Build constraint
-        constraints = [f'QDate > {int(cutoff_time.timestamp())}']
-        if owner:
-            constraints.append(f'Owner == "{owner}"')
-        
-        # Add status filter if specified
+        # Apply status filter if specified
         if status_filter:
             status_map = {
                 "running": 2, "idle": 1, "held": 5,
                 "completed": 4, "removed": 3, "suspended": 7
             }
             status_code = status_map.get(status_filter.lower())
-            if status_code is not None:
-                constraints.append(f"JobStatus == {status_code}")
+            if status_code is not None and 'jobstatus' in df.columns:
+                df = df[df['jobstatus'] == status_code]
         
-        constraint = " and ".join(constraints)
-        
-        # Get job attributes needed for wait time calculation
-        attrs = [
-            "ClusterId", "ProcId", "JobStatus", "Owner", "QDate", 
-            "JobStartDate", "JobCurrentStartDate", "LastMatchTime"
-        ]
-        
-        jobs = schedd.query(constraint, projection=attrs)
-        
-        # Calculate wait times
+        # Calculate wait times from DataFrame
         wait_times = []
         job_details = []
         
-        for ad in jobs:
-            job_info = {}
-            for attr in attrs:
-                v = ad.get(attr)
-                if hasattr(v, "eval"):
-                    try:
-                        v = v.eval()
-                    except Exception:
-                        v = None
-                job_info[attr.lower()] = v
-            
-            q_date = job_info.get("qdate")
-            job_start_date = job_info.get("jobstartdate")
-            job_current_start_date = job_info.get("jobcurrentstartdate")
+        # Check if required columns exist
+        required_columns = ['qdate', 'jobstartdate', 'jobcurrentstartdate']
+        if not all(col in df.columns for col in required_columns):
+            result = {
+                "success": True,
+                "message": "Required columns for wait time calculation not available in DataFrame",
+                "time_range": time_range,
+                "total_jobs_analyzed": len(df),
+                "jobs_with_wait_times": 0,
+                "histogram": {},
+                "statistics": {}
+            }
+            log_tool_call(session_id, user_id, "generate_queue_wait_time_histogram", 
+                         {"time_range": time_range, "bin_count": bin_count, "owner": owner, "status_filter": status_filter}, result)
+            return result
+        
+        # Calculate wait times for each job
+        for _, row in df.iterrows():
+            q_date = row.get('qdate')
+            job_start_date = row.get('jobstartdate')
+            job_current_start_date = row.get('jobcurrentstartdate')
             
             # Use current start date if available, otherwise use first start date
-            start_date = job_current_start_date or job_start_date
+            start_date = job_current_start_date if pd.notna(job_current_start_date) else job_start_date
             
-            if q_date and start_date and start_date > q_date:
+            if pd.notna(q_date) and pd.notna(start_date) and start_date > q_date:
                 wait_time = start_date - q_date  # Wait time in seconds
                 wait_times.append(wait_time)
                 
                 job_details.append({
-                    "cluster_id": job_info.get("clusterid"),
-                    "proc_id": job_info.get("procid"),
-                    "owner": job_info.get("owner"),
-                    "status": job_info.get("jobstatus"),
+                    "cluster_id": row.get('clusterid'),
+                    "proc_id": row.get('procid'),
+                    "owner": row.get('owner'),
+                    "status": row.get('jobstatus'),
                     "queue_date": q_date,
                     "start_date": start_date,
                     "wait_time_seconds": wait_time,
@@ -1695,7 +1810,7 @@ def generate_queue_wait_time_histogram(
                 "success": True,
                 "message": "No jobs with valid wait time data found in the specified time range",
                 "time_range": time_range,
-                "total_jobs_analyzed": len(jobs),
+                "total_jobs_analyzed": len(df),
                 "jobs_with_wait_times": 0,
                 "histogram": {},
                 "statistics": {}
@@ -1751,7 +1866,7 @@ def generate_queue_wait_time_histogram(
         
         # Create summary statistics
         statistics = {
-            "total_jobs_analyzed": len(jobs),
+            "total_jobs_analyzed": len(df),
             "jobs_with_wait_times": total_jobs,
             "min_wait_time_seconds": min_wait,
             "max_wait_time_seconds": max_wait,
@@ -1784,6 +1899,22 @@ def generate_queue_wait_time_histogram(
             }
         }
         
+        # Helper function to convert numpy types to JSON-serializable types
+        def convert_numpy_types(obj):
+            """Convert numpy types to JSON-serializable types"""
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
+        
         # Create result
         result = {
             "success": True,
@@ -1791,15 +1922,15 @@ def generate_queue_wait_time_histogram(
             "bin_count": bin_count,
             "owner_filter": owner or "all",
             "status_filter": status_filter or "all",
-            "statistics": statistics,
-            "histogram": {
+            "statistics": convert_numpy_types(statistics),
+            "histogram": convert_numpy_types({
                 "bins": bins,
                 "total_jobs": total_jobs,
                 "bin_width_seconds": bin_width,
                 "bin_width_minutes": bin_width / 60,
                 "bin_width_hours": bin_width / 3600
-            },
-            "sample_jobs": job_details[:20]  # Include first 20 jobs as examples
+            }),
+            "sample_jobs": convert_numpy_types(job_details[:20])  # Include first 20 jobs as examples
         }
         
         log_tool_call(session_id, user_id, "generate_queue_wait_time_histogram", 
@@ -1813,14 +1944,148 @@ def generate_queue_wait_time_histogram(
         return result
 
 
+# ===== GLOBAL DATAFRAME MANAGEMENT =====
+
+def get_global_dataframe():
+    """Get the global DataFrame instance, creating it if it doesn't exist"""
+    global _global_dataframe_instance, _global_dataframe_lock
+    
+    with _global_dataframe_lock:
+        if _global_dataframe_instance is None:
+            logging.info("Creating new global DataFrame instance")
+            _global_dataframe_instance = HTCondorDataFrame()
+        return _global_dataframe_instance
+
+def initialize_global_dataframe(time_range: Optional[str] = None, force_update: bool = False) -> dict:
+    """Initialize the global DataFrame and return basic information"""
+    
+    try:
+        # Get or create global DataFrame instance
+        htcondor_df = get_global_dataframe()
+        
+        # Get all jobs data
+        df = htcondor_df.get_all_jobs(time_range=time_range, force_update=force_update)
+        
+        if len(df) == 0:
+            return {"success": True, "message": "No job data available", "data": {}}
+        
+        # Get summary statistics
+        stats = htcondor_df.get_summary_stats()
+        
+        return {
+            "success": True,
+            "message": f"Initialized global DataFrame with {len(df)} jobs",
+            "data": {
+                "total_jobs": len(df),
+                "current_queue_jobs": stats.get('current_queue_jobs', 0),
+                "historical_jobs": stats.get('historical_jobs', 0),
+                "success_rate": stats.get('success_rate', 0),
+                "unique_owners": stats.get('unique_owners', 0),
+                "dataframe_columns": len(df.columns),
+                "time_range": time_range,
+                "force_update": force_update
+            }
+        }
+        
+    except Exception as e:
+        return {"success": False, "message": f"Error initializing global DataFrame: {str(e)}"}
+
+def refresh_global_dataframe(time_range: Optional[str] = None) -> dict:
+    """Force refresh the global DataFrame"""
+    return initialize_global_dataframe(time_range=time_range, force_update=True)
+
+def get_dataframe_status() -> dict:
+    """Get the status of the global DataFrame"""
+    global _global_dataframe_instance
+    
+    try:
+        if _global_dataframe_instance is None:
+            return {
+                "success": True,
+                "dataframe_exists": False,
+                "message": "Global DataFrame not initialized"
+            }
+        
+        # Check if DataFrame has data
+        df = _global_dataframe_instance.df
+        if df is None or len(df) == 0:
+            return {
+                "success": True,
+                "dataframe_exists": True,
+                "dataframe_has_data": False,
+                "message": "Global DataFrame exists but has no data"
+            }
+        
+        # Get basic info
+        stats = _global_dataframe_instance.get_summary_stats()
+        return {
+            "success": True,
+            "dataframe_exists": True,
+            "dataframe_has_data": True,
+            "total_jobs": len(df),
+            "current_queue_jobs": stats.get('current_queue_jobs', 0),
+            "historical_jobs": stats.get('historical_jobs', 0),
+            "success_rate": stats.get('success_rate', 0),
+            "unique_owners": stats.get('unique_owners', 0),
+            "dataframe_columns": len(df.columns),
+            "last_update": _global_dataframe_instance.last_update.isoformat() if _global_dataframe_instance.last_update else None,
+            "message": f"Global DataFrame ready with {len(df)} jobs"
+        }
+        
+    except Exception as e:
+        return {"success": False, "message": f"Error checking DataFrame status: {str(e)}"}
+
 # ===== NEW CONTEXT-AWARE TOOLS =====
 
+def get_jobs_from_global_dataframe(time_range: Optional[str] = None, owner: Optional[str] = None) -> pd.DataFrame:
+    """Get jobs from global DataFrame with optional filtering"""
+    try:
+        # Get global DataFrame
+        htcondor_df = get_global_dataframe()
+        
+        # Get all jobs
+        df = htcondor_df.get_all_jobs(time_range=time_range, force_update=False)
+        
+        if len(df) == 0:
+            return pd.DataFrame()
+        
+        # Apply owner filter if specified
+        if owner and 'owner' in df.columns:
+            df = df[df['owner'] == owner]
+        
+        return df
+        
+    except Exception as e:
+        logging.error(f"Error getting jobs from global DataFrame: {e}")
+        return pd.DataFrame()
 
+def get_dataframe_status_tool(tool_context=None) -> dict:
+    """Get the status of the global DataFrame (tool version with session logging)"""
+    
+    session_id, user_id = ensure_session_exists(tool_context)
+    
+    try:
+        result = get_dataframe_status()
+        log_tool_call(session_id, user_id, "get_dataframe_status", {}, result)
+        return result
+    except Exception as e:
+        result = {"success": False, "message": f"Error getting DataFrame status: {str(e)}"}
+        log_tool_call(session_id, user_id, "get_dataframe_status", {}, result)
+        return result
 
-
-
-
-
+def refresh_dataframe_tool(time_range: Optional[str] = None, tool_context=None) -> dict:
+    """Force refresh the global DataFrame (tool version with session logging)"""
+    
+    session_id, user_id = ensure_session_exists(tool_context)
+    
+    try:
+        result = refresh_global_dataframe(time_range=time_range)
+        log_tool_call(session_id, user_id, "refresh_dataframe", {"time_range": time_range}, result)
+        return result
+    except Exception as e:
+        result = {"success": False, "message": f"Error refreshing DataFrame: {str(e)}"}
+        log_tool_call(session_id, user_id, "refresh_dataframe", {"time_range": time_range}, result)
+        return result
 
 
 ADK_AF_TOOLS = {
@@ -1848,21 +2113,25 @@ ADK_AF_TOOLS = {
     "generate_queue_wait_time_histogram": FunctionTool(func=generate_queue_wait_time_histogram),
     "get_utilization_stats": FunctionTool(func=get_utilization_stats),
     "export_job_data": FunctionTool(func=export_job_data),
+    
+    # HTCondor DataFrame Tools
+    "get_dataframe_status": FunctionTool(func=get_dataframe_status_tool),
+    "refresh_dataframe": FunctionTool(func=refresh_dataframe_tool),
 }
 
 
 @app.list_tools()
 async def list_mcp_tools() -> list[mcp_types.Tool]:
-    logging.info("Received list_tools request.")
+    logging.debug("Received list_tools request.")
     schemas = []
     for name, inst in ADK_AF_TOOLS.items():
         try:
             if not inst.name:
                 inst.name = name
-                logging.info(f"Converting tool schema for: {name}")
+                logging.debug(f"Converting tool schema for: {name}")
             schema = adk_to_mcp_tool_type(inst)
             schemas.append(schema)
-            logging.info(f"Successfully converted tool schema for: {name}")
+            logging.debug(f"Successfully converted tool schema for: {name}")
         except Exception as e:
             logging.error(f"Error converting tool schema for '{name}': {e}", exc_info=True)
             # Skip this tool if it fails to convert
@@ -1872,7 +2141,7 @@ async def list_mcp_tools() -> list[mcp_types.Tool]:
 
 @app.call_tool()
 async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextContent]:
-    logging.info(f"call_tool for '{name}' args: {arguments}")
+    logging.debug(f"Calling tool: {name}")
     
     # Create a copy of arguments to avoid modifying the original
     tool_args = arguments.copy()
@@ -1882,7 +2151,7 @@ async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextConten
     session_id = tool_args.get('session_id', None)
     tool_context = {'session_id': session_id} if session_id else None
     
-    logging.info(f"Extracted session_id: {session_id}, tool_context: {tool_context}")
+    logging.debug(f"Session ID: {session_id}")
     
     if name in ADK_AF_TOOLS:
         inst = ADK_AF_TOOLS[name]
@@ -1892,7 +2161,7 @@ async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.TextConten
                 tool_args['tool_context'] = tool_context
             
             resp = await inst.run_async(args=tool_args, tool_context=tool_context)
-            logging.info(f"Tool '{name}' success.")
+            logging.debug(f"Tool '{name}' completed successfully.")
             return [mcp_types.TextContent(type="text", text=json.dumps(resp, indent=2))]
         except Exception as e:
             logging.error(f"Error executing '{name}': {e}", exc_info=True)
