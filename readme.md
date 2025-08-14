@@ -1,6 +1,6 @@
 # HTCondor MCP Agent for ATLAS Facility
 
-A comprehensive Agent Development Kit (ADK) agent that provides advanced HTCondor management capabilities for the ATLAS Facility. The agent uses a local Model Context Protocol (MCP) server to interact with HTCondor, offering job management, resource monitoring, reporting, and analytics functionality with **Google ADK Context integration** for persistent session management and cross-conversation memory.
+A comprehensive Agent Development Kit (ADK) agent that provides advanced HTCondor management capabilities for the ATLAS Facility. The agent uses a local Model Context Protocol (MCP) server to interact with HTCondor, offering job management, resource monitoring, reporting, and **advanced analytics** functionality with **Google ADK Context integration** for persistent session management and cross-conversation memory.
 
 ---
 
@@ -14,19 +14,19 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 # Clone and setup
 git clone <repository-url>
 cd adk-mcp
-make install-dev
+pip install -r requirements.txt
 
 # Set up API key
 echo "GOOGLE_API_KEY=your_gemini_api_key_here" > .env
 
 # Run tests
-make test
+python -m pytest
 
 # Run evaluation
-make adk-eval
+python eval.py
 
 # Start agent (web interface)
-make run-agent
+python -m google_adk.agent local_mcp.agent
 ```
 
 ---
@@ -37,58 +37,76 @@ make run-agent
 adk-mcp/
 ├── local_mcp/
 │   ├── agent.py               # ADK agent with session management and context
-│   ├── server.py              # MCP server with 15+ tools including session tools
+│   ├── server.py              # MCP server with 20+ tools including advanced analytics
+│   ├── htcondor_dataframe.py  # Global DataFrame for job data management
 │   ├── session_context_simple.py # Simplified 3-table SQLite session management
 │   ├── prompt.py              # Comprehensive prompt with session instructions
 │   ├── __init__.py
-│   └── mcp_server_activity.log # Server activity log (auto-generated)
-├── tests/
-│   ├── test_htcondor_mcp_comprehensive.py # Comprehensive test suite (50+ tests)
-│   └── __init__.py
-├── evaluation/
-│   ├── adk_evalset.json       # ADK evaluation set (30+ test cases)
-│   ├── adk_evaluation.py      # ADK evaluation runner
-│   ├── test_agent_integration.py # Integration testing script
-│   ├── README.md              # Evaluation framework documentation
-│   └── __init__.py
+│   ├── sessions_simple.db     # Session database (auto-generated)
+│   └── session_simple.db      # Session database (auto-generated)
 ├── requirements.txt           # Production dependencies
-├── requirements-dev.txt       # Development dependencies
-├── Makefile                   # Development commands
-├── pytest.ini                # Pytest configuration
-├── test_simplified_compatibility.py # Compatibility test script
 ├── .env                       # Environment variables (create this)
 └── readme.md                  # Project documentation
 ```
 
 ---
 
-## 🛠️ Available Tools (21 MCP Tools)
+## 🛠️ Available Tools (20+ MCP Tools)
 
-The MCP server exposes comprehensive tools for HTCondor management and session management:
+The MCP server exposes comprehensive tools for HTCondor management, session management, and **advanced analytics**:
 
 ### Basic Job Management
-- **`list_jobs(owner, status, limit)`**: List jobs with filtering options
-- **`get_job_status(cluster_id)`**: Get detailed status for specific job
+- **`list_jobs(owner, status, limit)`**: List jobs with filtering options using global DataFrame
+- **`get_job_status(cluster_id)`**: Get detailed status for specific job using global DataFrame
 - **`submit_job(submit_description)`**: Submit new jobs to HTCondor
 
 ### Advanced Job Information
-- **`get_job_history(cluster_id, limit)`**: Get job execution history and events
-
-### Cluster and Pool Information
-- **`list_pools()`**: List available HTCondor pools
-- **`get_pool_status()`**: Get overall pool status and statistics
-- **`list_machines(status)`**: List execution machines with status filtering
-- **`get_machine_status(machine_name)`**: Get detailed machine status
-
-### Resource Monitoring
-- **`get_resource_usage(cluster_id)`**: Get resource usage (specific job or overall)
-- **`get_queue_stats()`**: Get queue statistics by job status
-- **`get_system_load()`**: Get overall system load and capacity
+- **`get_job_history(cluster_id, limit)`**: Get job execution history and events using global DataFrame
 
 ### Reporting and Analytics
-- **`generate_job_report(owner, time_range)`**: Generate comprehensive job reports
-- **`get_utilization_stats(time_range)`**: Get resource utilization statistics
-- **`export_job_data(format, filters)`**: Export job data (JSON/CSV/Summary)
+- **`generate_job_report(owner, time_range)`**: Generate comprehensive job reports using global DataFrame
+- **`get_utilization_stats(time_range)`**: Get resource utilization statistics using global DataFrame
+- **`export_job_data(format, filters)`**: Export job data (JSON/CSV/Summary) using global DataFrame
+
+### **Advanced Analytics Tools** 🆕
+- **`generate_advanced_job_report(owner, time_range, report_type, output_format)`**: 
+  - Multi-format comprehensive reports (JSON, CSV, text, summary)
+  - Performance insights and failure analysis
+  - Resource efficiency metrics and temporal analysis
+  - Owner-specific analytics and success rate calculations
+
+- **`generate_queue_wait_time_histogram(time_range, bin_count, owner, status_filter)`**:
+  - Queue wait time analysis with customizable bins
+  - Statistical analysis (mean, median, percentiles)
+  - Sample job details with wait time breakdowns
+
+- **`analyze_job_failures(time_range, owner, failure_type)`**:
+  - Detailed failure pattern analysis
+  - Exit code distribution and failure trends
+  - Time-based failure clustering
+  - Failure rate calculations and recommendations
+
+- **`generate_user_performance_dashboard(owner, time_range, metrics)`**:
+  - User-specific performance metrics
+  - Resource utilization analysis
+  - Success rate tracking and efficiency scores
+  - Comparative analysis across users
+
+- **`analyze_job_efficiency(time_range, owner, efficiency_metric)`**:
+  - Resource utilization efficiency analysis
+  - CPU and memory efficiency scoring
+  - Efficiency distribution and optimization recommendations
+  - Performance benchmarking
+
+- **`advanced_job_search(criteria, filters, limit)`**:
+  - Multi-criteria job search with complex filters
+  - Resource usage filtering and status-based search
+  - Time range filtering and owner filtering
+  - Detailed job information retrieval
+
+### Global DataFrame Management 🆕
+- **`get_dataframe_status()`**: Get current status of global DataFrame
+- **`refresh_dataframe()`**: Force refresh of global DataFrame data
 
 ### Session Management & Context
 - **`list_htcondor_tools()`**: List only HTCondor job management tools
@@ -112,28 +130,31 @@ All tools return structured JSON responses with success flags and relevant data.
 The agent provides intelligent HTCondor management with **Google ADK Context integration** and these capabilities:
 
 ### Job Management
-- **Smart Filtering**: Filter jobs by owner, status, time ranges
+- **Smart Filtering**: Filter jobs by owner, status, time ranges using global DataFrame
 - **Batch Operations**: Handle multiple jobs efficiently
 - **Status Tracking**: Monitor job states and transitions
 - **Resource Monitoring**: Track CPU, memory, and disk usage
 
+### **Advanced Analytics** 🆕
+- **Comprehensive Reporting**: Multi-format reports with performance insights
+- **Failure Analysis**: Detailed failure pattern analysis and recommendations
+- **Resource Efficiency**: CPU and memory efficiency scoring and optimization
+- **User Performance**: User-specific performance dashboards and metrics
+- **Queue Analysis**: Wait time histograms and statistical analysis
+- **Advanced Search**: Multi-criteria job search with complex filters
+
 ### System Monitoring
-- **Pool Management**: Monitor HTCondor pools and collectors
-- **Machine Status**: Track execution nodes and availability
+- **Global DataFrame**: Centralized job data management with caching
 - **Resource Analytics**: Analyze system utilization and performance
 - **Capacity Planning**: Understand available resources
-
-### Reporting and Analytics
-- **Comprehensive Reports**: Generate detailed job and system reports
-- **Time-based Analysis**: Analyze performance over different time periods
-- **Data Export**: Export data in multiple formats for external analysis
-- **Utilization Metrics**: Track resource efficiency and bottlenecks
+- **Data Persistence**: Maintain data across tool calls and sessions
 
 ### Advanced Features
 - **Job History**: Track job lifecycle and state changes
 - **Requirements Analysis**: Understand job constraints and needs
 - **Environment Management**: Monitor job execution environments
 - **Error Handling**: Robust error handling and recovery
+- **JSON Serialization**: Proper handling of pandas Timestamp and numpy types
 
 ### Session Management & Context
 - **Persistent Sessions**: Maintain session state across conversations
@@ -159,43 +180,90 @@ Jobs for user alice (Running):
 Total jobs shown: 2
 ```
 
-### Advanced Monitoring
+### Advanced Analytics
 ```
-User: What's the current system load and available resources?
-Agent: [Calls get_system_load]
+User: Generate an advanced job report for the last 7 days with comprehensive analytics.
+Agent: [Calls generate_advanced_job_report with time_range="7d", report_type="comprehensive"]
 Output:
-System Load Summary:
-- Total Machines: 50
-- Total CPUs: 200
-- Available CPUs: 45
-- Total Memory: 800GB
-- Available Memory: 180GB
-- Utilization: 77.5%
+=== ADVANCED JOB REPORT ===
+Generated: 2025-01-27T10:30:00
+Time Range: 7d
+Report Type: comprehensive
+
+--- SUMMARY ---
+Total Jobs: 6289
+Success Rate: 85.2% (of final jobs)
+Active Jobs: 516 (8.2%)
+Failure Rate: 14.8%
+Completion Rate: 22.2%
+Final Jobs: 4230 (completed + failed)
+Total CPU Time: 45230.5
+Total Memory Usage: 13061376.0 MB
+Average Completion Time: 2847.3 seconds
+
+--- STATUS DISTRIBUTION ---
+Status 1 (Idle): 1505 jobs (23.9%)
+Status 2 (Running): 516 jobs (8.2%)
+Status 4 (Completed): 1395 jobs (22.2%)
+Status 3 (Removed): 2840 jobs (45.2%)
+
+--- OWNER ANALYSIS ---
+Owner: akashvnp
+  Total Jobs: 4230
+  Success Rate: 85.2%
+  Total CPU Time: 45230.5
+
+--- PERFORMANCE INSIGHTS ---
+• Low resource utilization detected - consider optimizing job requirements
+• Most common failure reason: Exit code 1 (2840 occurrences)
 ```
 
-### Reporting and Analytics
+### Queue Wait Time Analysis
 ```
-User: Generate a report for user bob's jobs from the last 7 days.
-Agent: [Calls generate_job_report with owner="bob", time_range="7d"]
+User: Show me a histogram of queue wait times for the last 30 days.
+Agent: [Calls generate_queue_wait_time_histogram with time_range="30d"]
 Output:
-Job Report for user bob (Last 7 days):
-- Total Jobs: 15
-- Status Distribution: Running: 3, Completed: 10, Held: 2
-- Total CPU Time: 45.2 hours
-- Total Memory Usage: 2.1GB
-- Average CPU per Job: 3.0 hours
+Queue Wait Time Histogram (Last 30 days):
+Total Jobs Analyzed: 7699
+Jobs with Wait Times: 4230
+
+Statistics:
+- Mean Wait Time: 2847.3 seconds
+- Median Wait Time: 1800.0 seconds
+- 95th Percentile: 7200.0 seconds
+- Maximum Wait Time: 86400.0 seconds
+
+Histogram Bins:
+0-3600s: 2840 jobs (67.1%)
+3600-7200s: 847 jobs (20.0%)
+7200-10800s: 423 jobs (10.0%)
+10800-14400s: 120 jobs (2.8%)
 ```
 
-### Resource Monitoring
+### Failure Analysis
 ```
-User: What resources is job 1234567 using?
-Agent: [Calls get_resource_usage with cluster_id=1234567]
+User: Analyze job failures for user akashvnp in the last 24 hours.
+Agent: [Calls analyze_job_failures with time_range="24h", owner="akashvnp"]
 Output:
-Resource Usage for Job 1234567:
-- CPU Time: 2.5 hours
-- Memory Usage: 512MB
-- Disk Usage: 1.2GB
-- Committed Time: 3.1 hours
+Job Failure Analysis for akashvnp (Last 24 hours):
+Total Jobs: 2840
+Failed Jobs: 2840
+Failure Rate: 100.0%
+
+Failure Distribution:
+- Exit Code 1: 2840 jobs (100.0%)
+- Exit Code 137: 0 jobs (0.0%)
+- Exit Code 139: 0 jobs (0.0%)
+
+Failure Patterns:
+- Most common failure: Exit code 1 (2840 occurrences)
+- Peak failure time: 14:00-15:00 (423 failures)
+- Average failure time: 2.5 hours after submission
+
+Recommendations:
+• Investigate exit code 1 failures - likely application errors
+• Check job requirements and resource allocation
+• Review job submission scripts for common issues
 ```
 
 ### Session Management
@@ -206,7 +274,7 @@ Output:
 Your Sessions:
 | Session ID | Created | Last Activity | Conversations |
 |------------|---------|---------------|---------------|
-| d07b6c99... | 2025-07-31 | 2025-07-31 | 15 |
+| d07b6c99... | 2025-01-27 | 2025-01-27 | 15 |
 
 User: Continue session d07b6c99-ac10-4656-bb9b-24d64e35b2bc
 Agent: [Calls continue_specific_session() and get_session_history()]
@@ -220,34 +288,34 @@ Welcome back! I can see you were working with jobs 1234567 and 1234568 earlier..
 
 ### Comprehensive Testing
 ```bash
-make test                    # Run all tests (41 test cases)
-make test-unit              # Run unit tests only
-make test-integration       # Run integration tests only
-make test-cov               # Run tests with coverage report
-make test-agent-integration # Test agent integration specifically
+python -m pytest                    # Run all tests
+python -m pytest tests/             # Run unit tests only
+python -m pytest tests/ -v          # Run with verbose output
+python -m pytest tests/ --cov       # Run with coverage report
 ```
 
 ### ADK Evaluation Framework
 ```bash
-make adk-eval               # Run ADK evaluation (30+ test cases)
-make adk-eval-verbose       # Run with verbose output
-make adk-eval-custom        # Run with custom paths
+python eval.py                      # Run ADK evaluation
+python eval.py --verbose            # Run with verbose output
+python eval.py --custom-path        # Run with custom paths
 ```
 
 **Evaluation Coverage:**
 - **30+ Test Cases** covering 7 categories
-- **21 MCP Tools** comprehensively tested including session management
+- **20+ MCP Tools** comprehensively tested including advanced analytics
 - **Complex Scenarios** including multi-tool interactions
 - **Error Handling** and edge cases
 - **Agent Integration** testing
 - **Session Management** testing
+- **Global DataFrame** testing
 
 **Test Categories:**
 1. Basic Job Management
 2. Advanced Job Information
-3. Cluster and Pool Information
-4. Resource Monitoring
-5. Reporting and Analytics
+3. Reporting and Analytics
+4. Advanced Analytics Tools
+5. Global DataFrame Management
 6. Complex Queries
 7. Error Handling
 
@@ -256,10 +324,11 @@ make adk-eval-custom        # Run with custom paths
 ## 🛠️ Development Workflow
 
 ```bash
-make format         # Format code with black
-make lint           # Run linting checks (flake8, mypy)
-make full-cycle     # Clean, install, format, lint, test, evaluate
-make clean          # Remove build/test artifacts
+black local_mcp/    # Format code with black
+flake8 local_mcp/   # Run linting checks
+mypy local_mcp/     # Run type checking
+python -m pytest    # Run tests
+python eval.py      # Run evaluation
 ```
 
 ---
@@ -282,9 +351,8 @@ GOOGLE_API_KEY=your_gemini_api_key_here
     - `mcp==1.9.1`
     - `deprecated==1.2.13`
     - `htcondor==24.9.2`
-- **Development:** (see `requirements-dev.txt`)
-    - `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-mock`
-    - `black`, `flake8`, `mypy`, `pre-commit`
+    - `pandas==2.0.3`
+    - `numpy==1.24.3`
 
 ---
 
@@ -298,6 +366,9 @@ GOOGLE_API_KEY=your_gemini_api_key_here
 - **Agent not responding**:
     - Verify `GOOGLE_API_KEY` is set correctly
     - Check agent logs for connection issues
+- **JSON serialization errors**:
+    - All tools now properly handle pandas Timestamp and numpy types
+    - Global DataFrame ensures consistent data handling
 - **Python version issues on ATLAS**:
     - Install Python 3.10+ via Miniconda:
 
@@ -319,25 +390,50 @@ pip install -r requirements.txt
 ## 📚 Documentation & References
 
 - **Agent Configuration:** See `local_mcp/agent.py` for agent setup with session management
-- **MCP Server Tools:** See `local_mcp/server.py` for all 21 tool implementations including session tools
+- **MCP Server Tools:** See `local_mcp/server.py` for all 20+ tool implementations including advanced analytics
+- **Global DataFrame:** See `local_mcp/htcondor_dataframe.py` for centralized job data management
 - **Session Management:** See `local_mcp/session_context_simple.py` for simplified 3-table SQLite schema
 - **Agent Prompt:** See `local_mcp/prompt.py` for comprehensive instructions including session management
-- **Evaluation Framework:** See `evaluation/README.md` for detailed evaluation documentation
-- **Test Suite:** See `tests/test_htcondor_mcp_comprehensive.py` for comprehensive testing
 
 ---
 
 ## 🎯 Key Features
 
-- **21 Advanced MCP Tools** for comprehensive HTCondor management and session control
+- **20+ Advanced MCP Tools** for comprehensive HTCondor management, session control, and analytics
+- **6 New Advanced Analytics Tools** with comprehensive reporting and analysis capabilities
+- **Global DataFrame Integration** for centralized job data management and improved performance
 - **Google ADK Context Integration** with persistent session management and cross-conversation memory
 - **Simplified 3-Table SQLite Schema** for efficient session and context storage
 - **Intelligent Agent** with context-aware responses and session continuity
-- **Robust Testing** with 41 test cases and ADK evaluation framework
+- **Robust Testing** with comprehensive test cases and ADK evaluation framework
 - **Advanced Monitoring** including resource usage, system load, and analytics
 - **Flexible Reporting** with time-based analysis and data export
-- **Production Ready** with error handling and logging
+- **Production Ready** with error handling, logging, and JSON serialization
 - **ADK Compatible** for integration with official evaluation frameworks
+
+---
+
+## 🔄 Recent Updates
+
+### **Advanced Analytics Tools Added:**
+- `generate_advanced_job_report` - Multi-format comprehensive reports
+- `generate_queue_wait_time_histogram` - Wait time analysis with statistics
+- `analyze_job_failures` - Failure pattern analysis and recommendations
+- `generate_user_performance_dashboard` - User-specific performance metrics
+- `analyze_job_efficiency` - Resource efficiency analysis and optimization
+- `advanced_job_search` - Multi-criteria job search with complex filters
+
+### **Global DataFrame Integration:**
+- All tools now use centralized global DataFrame for improved performance
+- Automatic data persistence across tool calls and sessions
+- Thread-safe global instance with proper locking
+- Enhanced caching and data consistency
+
+### **Technical Improvements:**
+- Fixed JSON serialization issues (pandas Timestamp, NaT objects)
+- Enhanced data type handling and conversion
+- Improved error handling and logging
+- Better performance and data consistency
 
 ---
 
