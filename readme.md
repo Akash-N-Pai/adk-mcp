@@ -12,7 +12,7 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Clone and setup
-git clone <repository-url>
+git clone https://github.com/maniaclab/adk-mcp.git
 cd adk-mcp
 pip install -r requirements.txt
 
@@ -22,11 +22,16 @@ echo "GOOGLE_API_KEY=your_gemini_api_key_here" > .env
 # Run tests
 python -m pytest
 
-# Run evaluation
+# Run evaluation (must have the coversation in jason format)
 python eval.py
 
 # Start agent (web interface)
-python -m google_adk.agent local_mcp.agent
+cd adk-mcp  
+adk web
+
+# Start agent (web interface)
+cd adk-mcp  
+adk run local_mcp
 ```
 
 ---
