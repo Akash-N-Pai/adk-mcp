@@ -116,7 +116,7 @@ class HTCondorDataFrame:
             logger.info("Querying historical jobs from schedd...")
             historical_jobs = schedd.history(
                 constraint=constraint,
-                match=7500,  # Get up to 7,500 jobs (reduced from 10,000 to prevent timeout)
+                match=7500,  # Get up to 15,000 jobs (reduced from 10,000 to prevent timeout)
                 projection=self.job_attributes
             )
             
