@@ -114,7 +114,9 @@ root_agent = HTCondorAgent(
             connection_params=StdioServerParameters(
                 command="python3",
                 args=[PATH_TO_YOUR_MCP_SERVER_SCRIPT],
-            )
+            ),
+            # Add timeout configuration to prevent 5-second timeout errors
+            #timeout=30.0  # 30 seconds timeout instead of default 5 seconds
         )
     ],
 )

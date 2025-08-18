@@ -116,7 +116,7 @@ class HTCondorDataFrame:
             logger.info("Querying historical jobs from schedd...")
             historical_jobs = schedd.history(
                 constraint=constraint,
-                match=10000,  # Get up to 10,000 jobs
+                match=7500,  # Get up to 7,500 jobs (reduced from 10,000 to prevent timeout)
                 projection=self.job_attributes
             )
             
@@ -170,8 +170,8 @@ class HTCondorDataFrame:
             if time_range:
                 cmd.extend(["-since", time_range])
             
-            # Execute command
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            # Execute command with increased timeout
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # Increased from 120 to 300 seconds to prevent timeout errors
             
             if result.returncode != 0:
                 logger.error(f"condor_history command failed: {result.stderr}")
