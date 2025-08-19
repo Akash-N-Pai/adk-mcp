@@ -116,38 +116,34 @@ class HTCondorDataFrame:
             logger.info("Querying historical jobs from schedd...")
             historical_jobs = schedd.history(
                 constraint=constraint,
-                match=5000,  # Get up to 5,000 jobs (reduced from 10,000 to prevent timeout)
+                match=4000,  # Reduced limit to prevent timeout and overflow
                 projection=self.job_attributes
             )
             
             job_data = []
-            for job in historical_jobs:
-                try:
-                    # Convert ClassAd to dictionary
-                    job_info = {}
-                    for attr in self.job_attributes:
-                        if attr in job:
-                            value = job[attr]
-                            # Handle ClassAd values
-                            if hasattr(value, 'eval'):
-                                try:
-                                    job_info[attr.lower()] = value.eval()
-                                except Exception:
-                                    job_info[attr.lower()] = str(value.eval())
-                            else:
-                                job_info[attr.lower()] = value
-                        else:
-                            job_info[attr.lower()] = None
-                    
-                    # Add data source indicator
-                    job_info['data_source'] = 'history'
-                    job_info['retrieved_at'] = datetime.datetime.now().isoformat()
-                    
-                    job_data.append(job_info)
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to process historical job: {e}")
-                    continue
+            start_time = time.time()
+            timeout = 30  # 30 second timeout
+            
+            for ad in historical_jobs:
+                # Check for timeout
+                if time.time() - start_time > timeout:
+                    logger.warning(f"Timeout reached after {timeout} seconds, stopping history retrieval")
+                    break
+                job_info = {}
+                for attr in self.job_attributes:
+                    v = ad.get(attr)
+                    if hasattr(v, "eval"):
+                        try:
+                            v = v.eval()
+                        except Exception:
+                            v = None
+                    job_info[attr.lower()] = v
+                
+                # Add data source indicator
+                job_info['data_source'] = 'history'
+                job_info['retrieved_at'] = datetime.datetime.now().isoformat()
+                
+                job_data.append(job_info)
             
             logger.info(f"Retrieved {len(job_data)} jobs from history using Python API")
             return job_data
@@ -422,31 +418,30 @@ class HTCondorDataFrame:
         for col in timestamp_columns:
             if col in df.columns:
                 try:
+                    # First convert to numeric to handle any string values
+                    numeric_timestamps = pd.to_numeric(df[col], errors='coerce')
+                    
                     # Filter out invalid timestamp values
-                    valid_timestamps = df[col].dropna()
+                    valid_timestamps = numeric_timestamps.dropna()
                     if len(valid_timestamps) > 0:
                         # Check for reasonable timestamp range (1970-2030)
                         min_valid = 0  # Unix epoch start
                         max_valid = 2000000000  # ~2033
                         
                         # Filter out extreme values that could cause overflow
-                        valid_mask = (valid_timestamps >= min_valid) & (valid_timestamps <= max_valid)
+                        valid_mask = (numeric_timestamps >= min_valid) & (numeric_timestamps <= max_valid)
                         
                         # Additional safety check for very large values
-                        if valid_timestamps.max() > 1e12:  # If timestamps are in milliseconds
-                            valid_mask = valid_mask & (valid_timestamps <= 1e12)
-                            # Convert milliseconds to seconds
-                            df[f'{col}_datetime'] = pd.to_datetime(
-                                (df[col].where(valid_mask) / 1000).astype(float), 
-                                unit='s', 
-                                errors='coerce'
-                            )
+                        max_timestamp = valid_timestamps.max()
+                        if pd.notna(max_timestamp) and max_timestamp > 1e12:  # If timestamps are in milliseconds
+                            valid_mask = valid_mask & (numeric_timestamps <= 1e12)
+                            # Convert milliseconds to seconds safely
+                            safe_timestamps = (numeric_timestamps.where(valid_mask) / 1000).astype(float)
+                            df[f'{col}_datetime'] = pd.to_datetime(safe_timestamps, unit='s', errors='coerce')
                         else:
-                            df[f'{col}_datetime'] = pd.to_datetime(
-                                df[col].where(valid_mask), 
-                                unit='s', 
-                                errors='coerce'
-                            )
+                            # Use seconds directly
+                            safe_timestamps = numeric_timestamps.where(valid_mask).astype(float)
+                            df[f'{col}_datetime'] = pd.to_datetime(safe_timestamps, unit='s', errors='coerce')
                     else:
                         df[f'{col}_datetime'] = pd.NaT
                 except Exception as e:
@@ -456,11 +451,20 @@ class HTCondorDataFrame:
         # Calculate wait time with safe handling
         if 'qdate' in df.columns and 'jobstartdate' in df.columns:
             try:
+                # Convert to numeric first to handle any string values
+                qdate_numeric = pd.to_numeric(df['qdate'], errors='coerce')
+                jobstart_numeric = pd.to_numeric(df['jobstartdate'], errors='coerce')
+                
                 # Only calculate for valid timestamp pairs
-                valid_mask = df['qdate'].notna() & df['jobstartdate'].notna()
+                valid_mask = qdate_numeric.notna() & jobstart_numeric.notna()
+                
+                # Check for reasonable values to prevent overflow
+                reasonable_mask = (qdate_numeric >= 0) & (jobstart_numeric >= 0) & (jobstart_numeric <= 1e12)
+                final_mask = valid_mask & reasonable_mask
+                
                 df['wait_time_seconds'] = np.where(
-                    valid_mask,
-                    df['jobstartdate'] - df['qdate'],
+                    final_mask,
+                    jobstart_numeric - qdate_numeric,
                     np.nan
                 )
                 df['wait_time_minutes'] = df['wait_time_seconds'] / 60
@@ -474,11 +478,20 @@ class HTCondorDataFrame:
         # Calculate runtime with safe handling
         if 'jobstartdate' in df.columns and 'completiondate' in df.columns:
             try:
+                # Convert to numeric first to handle any string values
+                jobstart_numeric = pd.to_numeric(df['jobstartdate'], errors='coerce')
+                completion_numeric = pd.to_numeric(df['completiondate'], errors='coerce')
+                
                 # Only calculate for valid timestamp pairs
-                valid_mask = df['jobstartdate'].notna() & df['completiondate'].notna()
+                valid_mask = jobstart_numeric.notna() & completion_numeric.notna()
+                
+                # Check for reasonable values to prevent overflow
+                reasonable_mask = (jobstart_numeric >= 0) & (completion_numeric >= 0) & (completion_numeric <= 1e12)
+                final_mask = valid_mask & reasonable_mask
+                
                 df['runtime_seconds'] = np.where(
-                    valid_mask,
-                    df['completiondate'] - df['jobstartdate'],
+                    final_mask,
+                    completion_numeric - jobstart_numeric,
                     np.nan
                 )
                 df['runtime_minutes'] = df['runtime_seconds'] / 60
