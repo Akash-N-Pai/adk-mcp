@@ -24,7 +24,7 @@ class HTCondorDataFrame:
     def __init__(self):
         self.df = None
         self.last_update = None
-        self.update_interval = 300  # 5 minutes default
+        self.update_interval = 1800  # 30 minutes default
         self.schedd = htcondor.Schedd()
         
         # Define comprehensive job attributes
@@ -97,9 +97,14 @@ class HTCondorDataFrame:
             logger.error(f"Error retrieving current queue jobs: {e}")
             return []
     
-    def get_historical_jobs(self, time_range: Optional[str] = None) -> List[Dict]:
-        """Get jobs from history using HTCondor Python API"""
-        logger.info("Retrieving historical jobs using Python API...")
+    def get_historical_jobs(self, time_range: Optional[str] = None, max_jobs: Optional[int] = None) -> List[Dict]:
+        """Get jobs from history using HTCondor Python API
+        
+        Args:
+            time_range: Optional time range for historical jobs
+            max_jobs: Maximum number of jobs to retrieve (None for no limit)
+        """
+        logger.info(f"Retrieving historical jobs using Python API (max: {max_jobs})...")
         
         try:
             # Use HTCondor Python API to get historical jobs
@@ -112,23 +117,36 @@ class HTCondorDataFrame:
                 # For now, we'll get all history and filter later
                 logger.info(f"Time range specified: {time_range} (will be applied in filtering)")
             
+            # Determine the match limit for the API call
+            # Use the smaller of max_jobs or 4000 to prevent timeout
+            api_match_limit = 4000  # Default limit to prevent timeout
+            if max_jobs is not None:
+                api_match_limit = min(max_jobs, api_match_limit)
+            
             # Get historical jobs with all attributes
-            logger.info("Querying historical jobs from schedd...")
+            logger.info(f"Querying historical jobs from schedd with match limit: {api_match_limit}...")
             historical_jobs = schedd.history(
                 constraint=constraint,
-                match=4000,  # Reduced limit to prevent timeout and overflow
+                match=api_match_limit,
                 projection=self.job_attributes
             )
             
             job_data = []
             start_time = time.time()
             timeout = 30  # 30 second timeout
+            jobs_processed = 0
             
             for ad in historical_jobs:
                 # Check for timeout
                 if time.time() - start_time > timeout:
                     logger.warning(f"Timeout reached after {timeout} seconds, stopping history retrieval")
                     break
+                
+                # Check if we've reached the max_jobs limit
+                if max_jobs is not None and jobs_processed >= max_jobs:
+                    logger.info(f"Reached max_jobs limit of {max_jobs}, stopping history retrieval")
+                    break
+                
                 job_info = {}
                 for attr in self.job_attributes:
                     v = ad.get(attr)
@@ -144,6 +162,7 @@ class HTCondorDataFrame:
                 job_info['retrieved_at'] = datetime.datetime.now().isoformat()
                 
                 job_data.append(job_info)
+                jobs_processed += 1
             
             logger.info(f"Retrieved {len(job_data)} jobs from history using Python API")
             return job_data
@@ -153,11 +172,16 @@ class HTCondorDataFrame:
             logger.info("Falling back to command-line approach...")
             
             # Fallback to command-line approach if API fails
-            return self._get_historical_jobs_fallback(time_range)
+            return self._get_historical_jobs_fallback(time_range, max_jobs)
     
-    def _get_historical_jobs_fallback(self, time_range: Optional[str] = None) -> List[Dict]:
-        """Fallback method using condor_history command"""
-        logger.info("Using fallback condor_history command...")
+    def _get_historical_jobs_fallback(self, time_range: Optional[str] = None, max_jobs: Optional[int] = None) -> List[Dict]:
+        """Fallback method using condor_history command
+        
+        Args:
+            time_range: Optional time range for historical jobs
+            max_jobs: Maximum number of jobs to retrieve (None for no limit)
+        """
+        logger.info(f"Using fallback condor_history command (max: {max_jobs})...")
         
         try:
             # Build condor_history command to get full output
@@ -181,9 +205,15 @@ class HTCondorDataFrame:
                 lines = lines[1:]
             
             job_data = []
+            jobs_processed = 0
             for line in lines:
                 if not line.strip():
                     continue
+                
+                # Check if we've reached the max_jobs limit
+                if max_jobs is not None and jobs_processed >= max_jobs:
+                    logger.info(f"Reached max_jobs limit of {max_jobs}, stopping history retrieval")
+                    break
                 
                 try:
                     # Parse the full history line format:
@@ -285,6 +315,7 @@ class HTCondorDataFrame:
                         logger.debug(f"Failed to parse runtime for job {cluster_id}: {e}")
                     
                     job_data.append(job_info)
+                    jobs_processed += 1
                     
                 except Exception as e:
                     logger.warning(f"Failed to parse history line: {line[:100]}... Error: {e}")
@@ -300,8 +331,14 @@ class HTCondorDataFrame:
             logger.error(f"Error retrieving historical jobs: {e}")
             return []
     
-    def get_all_jobs(self, time_range: Optional[str] = None, force_update: bool = False) -> pd.DataFrame:
-        """Get all jobs (current queue + history) as DataFrame"""
+    def get_all_jobs(self, time_range: Optional[str] = None, force_update: bool = False, max_jobs: int = 22500) -> pd.DataFrame:
+        """Get all jobs (current queue + history) as DataFrame with limit
+        
+        Args:
+            time_range: Optional time range for historical jobs
+            force_update: Force refresh of cached data
+            max_jobs: Maximum number of jobs to include (default: 22500)
+        """
         
         # Check if update is needed
         if (not force_update and self.df is not None and 
@@ -310,16 +347,27 @@ class HTCondorDataFrame:
             logger.info("Using cached DataFrame")
             return self.df
         
-        logger.info("Building comprehensive job DataFrame...")
+        logger.info(f"Building comprehensive job DataFrame with limit of {max_jobs} jobs...")
         
-        # Get current queue jobs
+        # Get current queue jobs first (prioritized)
         current_jobs = self.get_current_queue_jobs()
+        logger.info(f"Retrieved {len(current_jobs)} jobs from current queue")
         
-        # Get historical jobs
-        historical_jobs = self.get_historical_jobs(time_range)
+        # Calculate how many historical jobs we can add
+        remaining_slots = max_jobs - len(current_jobs)
         
-        # Combine all jobs
-        all_jobs = current_jobs + historical_jobs
+        if remaining_slots <= 0:
+            logger.info(f"Queue has {len(current_jobs)} jobs, which exceeds limit of {max_jobs}. Using only queue jobs.")
+            all_jobs = current_jobs
+        else:
+            logger.info(f"Can add up to {remaining_slots} jobs from history")
+            
+            # Get historical jobs with limit
+            historical_jobs = self.get_historical_jobs(time_range, max_jobs=remaining_slots)
+            logger.info(f"Retrieved {len(historical_jobs)} jobs from history")
+            
+            # Combine jobs: queue jobs first, then history jobs
+            all_jobs = current_jobs + historical_jobs
         
         if not all_jobs:
             logger.warning("No jobs found")
@@ -337,7 +385,7 @@ class HTCondorDataFrame:
         # Update timestamp
         self.last_update = datetime.datetime.now()
         
-        logger.info(f"Created DataFrame with {len(self.df)} jobs")
+        logger.info(f"Created DataFrame with {len(self.df)} jobs (limit: {max_jobs})")
         return self.df
     
     def _clean_job_data(self, jobs: List[Dict]) -> List[Dict]:
@@ -543,6 +591,33 @@ class HTCondorDataFrame:
         
         return stats
     
+    def get_job_distribution_info(self) -> Dict:
+        """Get detailed information about job distribution and limits"""
+        if self.df is None or len(self.df) == 0:
+            return {}
+        
+        queue_jobs = self.df[self.df['data_source'] == 'current_queue']
+        history_jobs = self.df[self.df['data_source'] == 'history']
+        
+        distribution_info = {
+            'total_jobs': len(self.df),
+            'queue_jobs': {
+                'count': len(queue_jobs),
+                'percentage': (len(queue_jobs) / len(self.df)) * 100 if len(self.df) > 0 else 0
+            },
+            'history_jobs': {
+                'count': len(history_jobs),
+                'percentage': (len(history_jobs) / len(self.df)) * 100 if len(self.df) > 0 else 0
+            },
+            'limit_info': {
+                'queue_priority': "Queue jobs are prioritized and always included first",
+                'history_fill': "Remaining slots are filled from history",
+                'max_limit': 22500
+            }
+        }
+        
+        return distribution_info
+    
     def filter_jobs(self, filters: Dict) -> pd.DataFrame:
         """Filter jobs based on criteria"""
         if self.df is None:
@@ -592,15 +667,15 @@ def main():
     # Create DataFrame instance
     htcondor_df = HTCondorDataFrame()
     
-    # Get all jobs
-    print("📊 Retrieving all job data...")
-    df = htcondor_df.get_all_jobs()
+    # Get all jobs with limit
+    print("📊 Retrieving all job data with limit of 22500...")
+    df = htcondor_df.get_all_jobs(max_jobs=22500)
     
     if len(df) == 0:
         print("❌ No jobs found")
         return
     
-    print(f"✅ Retrieved {len(df)} total jobs")
+    print(f"✅ Retrieved {len(df)} total jobs (limited to 22500)")
     
     # Get summary statistics
     stats = htcondor_df.get_summary_stats()
@@ -612,6 +687,14 @@ def main():
     print(f"   Failed: {stats['failed_jobs']}")
     print(f"   Success rate: {stats['success_rate']:.1f}%")
     print(f"   Unique owners: {stats['unique_owners']}")
+    
+    # Get job distribution information
+    distribution = htcondor_df.get_job_distribution_info()
+    print(f"\n📊 Job Distribution (Limit: {distribution['limit_info']['max_limit']}):")
+    print(f"   Queue jobs: {distribution['queue_jobs']['count']} ({distribution['queue_jobs']['percentage']:.1f}%)")
+    print(f"   History jobs: {distribution['history_jobs']['count']} ({distribution['history_jobs']['percentage']:.1f}%)")
+    print(f"   Strategy: {distribution['limit_info']['queue_priority']}")
+    print(f"   Fill policy: {distribution['limit_info']['history_fill']}")
     
     # Show DataFrame info
     print(f"\n📋 DataFrame Info:")

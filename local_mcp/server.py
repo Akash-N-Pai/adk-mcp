@@ -2019,6 +2019,13 @@ def get_dataframe_status() -> dict:
                 "message": "Global DataFrame exists but has no data"
             }
         
+        # Calculate time since last update
+        time_since_update = None
+        needs_update = False
+        if _global_dataframe_instance.last_update:
+            time_since_update = (datetime.datetime.now() - _global_dataframe_instance.last_update).seconds
+            needs_update = time_since_update >= _global_dataframe_instance.update_interval
+        
         # Get basic info
         stats = _global_dataframe_instance.get_summary_stats()
         return {
@@ -2032,7 +2039,10 @@ def get_dataframe_status() -> dict:
             "unique_owners": stats.get('unique_owners', 0),
             "dataframe_columns": len(df.columns),
             "last_update": _global_dataframe_instance.last_update.isoformat() if _global_dataframe_instance.last_update else None,
-            "message": f"Global DataFrame ready with {len(df)} jobs"
+            "time_since_update_seconds": time_since_update,
+            "needs_update": needs_update,
+            "update_interval_seconds": _global_dataframe_instance.update_interval,
+            "message": f"Global DataFrame ready with {len(df)} jobs (updated {time_since_update}s ago)"
         }
         
     except Exception as e:
@@ -2046,8 +2056,25 @@ def get_jobs_from_global_dataframe(time_range: Optional[str] = None, owner: Opti
         # Get global DataFrame
         htcondor_df = get_global_dataframe()
         
-        # Get all jobs (without time filtering to get full dataset)
-        df = htcondor_df.get_all_jobs(force_update=False)
+        # Check if DataFrame exists and has data
+        if htcondor_df.df is None or len(htcondor_df.df) == 0:
+            # Only call get_all_jobs() if DataFrame is empty
+            logging.info("Global DataFrame is empty, initializing...")
+            df = htcondor_df.get_all_jobs(force_update=False)
+        else:
+            # Check if DataFrame needs updating based on update interval
+            needs_update = False
+            if htcondor_df.last_update:
+                time_since_update = (datetime.datetime.now() - htcondor_df.last_update).seconds
+                needs_update = time_since_update >= htcondor_df.update_interval
+            
+            if needs_update:
+                logging.info(f"Global DataFrame is {time_since_update}s old, updating...")
+                df = htcondor_df.get_all_jobs(force_update=False)
+            else:
+                # Use existing DataFrame directly (much more efficient)
+                logging.info(f"Using existing global DataFrame (updated {time_since_update}s ago)")
+                df = htcondor_df.df.copy()  # Make a copy to avoid modifying the original
         
         if len(df) == 0:
             return pd.DataFrame()
