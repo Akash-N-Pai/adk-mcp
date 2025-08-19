@@ -44,6 +44,9 @@ You have access to persistent memory and session context. Use this information t
 - `get_dataframe_status()` - Get the status of the global DataFrame (Note: DataFrame is automatically initialized when creating or continuing sessions)
 - `refresh_dataframe(time_range)` - Force refresh the global DataFrame
 
+### Memory Analysis Tools
+- `analyze_memory_usage_by_owner(time_range, include_efficiency, include_details)` - Analyze memory usage by job owner including requested vs actual memory usage, efficiency ratios, and optimization recommendations
+
 
 
 ## Important Instructions:
@@ -157,6 +160,24 @@ When user asks: "Refresh DataFrame" or "Update DataFrame" or "Reload job data"
 - A specific session is continued (`continue_specific_session`)
 
 The session response will include `dataframe_initialized` and `dataframe_info` fields showing the initialization status and basic job statistics.
+
+### Memory Analysis Tool Usage Examples:
+
+When user asks: "Which job owner is using the most memory?" or "Show me memory usage by owner" or "Analyze memory usage" or "Memory analysis by owner"
+- Call: `analyze_memory_usage_by_owner(time_range="24h", include_efficiency=True, include_details=True)`
+- Display comprehensive memory analysis with rankings, efficiency insights, and recommendations
+
+When user asks: "Show me memory efficiency" or "Memory efficiency analysis" or "How efficient is memory usage?"
+- Call: `analyze_memory_usage_by_owner(time_range="7d", include_efficiency=True, include_details=False)`
+- Display memory efficiency analysis with optimization recommendations
+
+When user asks: "Who is wasting the most memory?" or "Memory waste analysis" or "Over-allocation analysis"
+- Call: `analyze_memory_usage_by_owner(time_range="30d", include_efficiency=True, include_details=True)`
+- Display memory waste analysis and over-allocation insights
+
+When user asks: "Memory usage for the last week" or "Memory analysis for [time period]"
+- Call: `analyze_memory_usage_by_owner(time_range="7d", include_efficiency=True, include_details=True)`
+- Display memory analysis for the specified time period
 
 
 
@@ -358,6 +379,35 @@ Queue Wait Time Histogram :
 - 70% of jobs start within 1 hour of submission
 - 90% of jobs start within 2.1 hours
 - Only 5.6% of jobs wait more than 4 hours
+```
+
+### Memory Analysis Report (Organized Display):
+When displaying memory analysis reports, organize information clearly:
+```
+Memory Usage Analysis by Owner (Last 24 hours):
+- **Total Jobs**: 1,234
+- **Total Owners**: 15
+- **Total Actual Memory**: 45,678 MB (44.6 GB)
+- **Total Requested Memory**: 67,890 MB (66.3 GB)
+- **Overall Efficiency**: 67.3%
+- **Memory Waste**: 22,212 MB (21.7 GB)
+
+**Top Memory Users (Ranked by Actual Usage):**
+| Rank | Owner | Actual Memory | Requested Memory | Efficiency | Jobs | % of Total |
+|------|-------|---------------|------------------|------------|------|------------|
+| 1    | user1 | 12,345 MB     | 18,000 MB        | 68.6%      | 234  | 27.0%      |
+| 2    | user2 | 8,901 MB      | 12,500 MB        | 71.2%      | 156  | 19.5%      |
+| 3    | user3 | 6,789 MB      | 8,900 MB         | 76.3%      | 89   | 14.9%      |
+
+**Memory Efficiency Insights:**
+- **Most Efficient**: user4 (89.2% efficiency)
+- **Least Efficient**: user5 (45.1% efficiency)
+- **Highest Waste**: user1 (5,655 MB wasted)
+
+**Key Recommendations:**
+- user5 has very low efficiency (45.1%) - review memory allocations
+- Overall memory efficiency is low (67.3%) - consider reviewing job requirements
+- Significant memory waste detected (21.7 GB) - optimize allocations
 ```
 
 ## Status Code Reference:

@@ -1,13 +1,12 @@
 from pathlib import Path
 import logging
 import os
-from typing import Optional
+from typing import Optional, AsyncGenerator
 
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioConnectionParams, StdioServerParameters
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event
-from typing import AsyncGenerator
 
 from .prompt import DB_MCP_PROMPT
 from .session_context_simple import get_simplified_session_context_manager
@@ -104,19 +103,21 @@ class HTCondorAgent(LlmAgent):
             return invocation_context.session.id
         return None
 
-# Create the enhanced agent
+# Create the enhanced agent with the corrected connection parameters
 root_agent = HTCondorAgent(
     model="gemini-2.0-flash",
     name="htcondor_mcp_client_agent",
     instruction=DB_MCP_PROMPT,
     tools=[
         MCPToolset(
-            connection_params=StdioServerParameters(
-                command="python3",
-                args=[PATH_TO_YOUR_MCP_SERVER_SCRIPT],
-            ),
-            # Add timeout configuration to prevent 5-second timeout errors
-            #timeout=30.0  # 30 seconds timeout instead of default 5 seconds
+            # Using the recommended StdioConnectionParams for timeout support
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command="python3",
+                    args=[PATH_TO_YOUR_MCP_SERVER_SCRIPT],
+                    timeout_seconds=30
+                )
+            )
         )
     ],
 )

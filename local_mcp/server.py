@@ -2104,6 +2104,200 @@ def refresh_dataframe_tool(time_range: Optional[str] = None, tool_context=None) 
         return result
 
 
+def analyze_memory_usage_by_owner(
+    time_range: Optional[str] = None,
+    include_efficiency: bool = True,
+    include_details: bool = True,
+    tool_context=None
+) -> dict:
+    """Analyze memory usage by job owner including requested vs actual memory usage."""
+    session_id, user_id = ensure_session_exists(tool_context)
+    
+    try:
+        # Get jobs from global DataFrame
+        df = get_jobs_from_global_dataframe(time_range=time_range)
+        
+        if len(df) == 0:
+            result = {
+                "success": True,
+                "message": "No job data available for memory analysis",
+                "time_range": time_range,
+                "total_jobs": 0,
+                "memory_analysis": {}
+            }
+            log_tool_call(session_id, user_id, "analyze_memory_usage_by_owner", 
+                         {"time_range": time_range, "include_efficiency": include_efficiency, "include_details": include_details}, result)
+            return result
+        
+        # Check if required memory columns exist
+        required_columns = ['owner', 'memoryusage', 'requestmemory']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        
+        if missing_columns:
+            result = {
+                "success": False,
+                "message": f"Missing required columns for memory analysis: {missing_columns}",
+                "available_columns": list(df.columns)
+            }
+            log_tool_call(session_id, user_id, "analyze_memory_usage_by_owner", 
+                         {"time_range": time_range, "include_efficiency": include_efficiency, "include_details": include_details}, result)
+            return result
+        
+        # Group by owner and calculate memory statistics
+        owner_memory_stats = {}
+        total_requested_memory = 0
+        total_actual_memory = 0
+        total_jobs = 0
+        
+        for owner in df['owner'].unique():
+            owner_df = df[df['owner'] == owner]
+            owner_jobs = len(owner_df)
+            
+            # Convert memory values to numeric, handling any string values
+            actual_memory = pd.to_numeric(owner_df['memoryusage'], errors='coerce').fillna(0)
+            requested_memory = pd.to_numeric(owner_df['requestmemory'], errors='coerce').fillna(0)
+            
+            # Calculate totals
+            owner_actual_total = actual_memory.sum()
+            owner_requested_total = requested_memory.sum()
+            
+            # Calculate averages
+            owner_actual_avg = actual_memory.mean() if len(actual_memory) > 0 else 0
+            owner_requested_avg = requested_memory.mean() if len(requested_memory) > 0 else 0
+            
+            # Calculate efficiency (actual/requested ratio)
+            efficiency_ratio = (owner_actual_total / owner_requested_total * 100) if owner_requested_total > 0 else 0
+            
+            # Calculate memory waste (requested - actual)
+            memory_waste = owner_requested_total - owner_actual_total
+            
+            # Get memory distribution
+            actual_memory_stats = {
+                "min": float(actual_memory.min()) if len(actual_memory) > 0 else 0,
+                "max": float(actual_memory.max()) if len(actual_memory) > 0 else 0,
+                "median": float(actual_memory.median()) if len(actual_memory) > 0 else 0,
+                "std": float(actual_memory.std()) if len(actual_memory) > 0 else 0
+            }
+            
+            requested_memory_stats = {
+                "min": float(requested_memory.min()) if len(requested_memory) > 0 else 0,
+                "max": float(requested_memory.max()) if len(requested_memory) > 0 else 0,
+                "median": float(requested_memory.median()) if len(requested_memory) > 0 else 0,
+                "std": float(requested_memory.std()) if len(requested_memory) > 0 else 0
+            }
+            
+            # Create owner statistics
+            owner_stats = {
+                "total_jobs": owner_jobs,
+                "total_actual_memory_mb": float(owner_actual_total),
+                "total_requested_memory_mb": float(owner_requested_total),
+                "average_actual_memory_mb": float(owner_actual_avg),
+                "average_requested_memory_mb": float(owner_requested_avg),
+                "memory_efficiency_percent": float(efficiency_ratio),
+                "memory_waste_mb": float(memory_waste),
+                "actual_memory_stats": actual_memory_stats,
+                "requested_memory_stats": requested_memory_stats
+            }
+            
+            # Add efficiency insights
+            if include_efficiency:
+                if efficiency_ratio < 50:
+                    owner_stats["efficiency_insight"] = "Low efficiency - significant over-allocation"
+                elif efficiency_ratio < 80:
+                    owner_stats["efficiency_insight"] = "Moderate efficiency - some over-allocation"
+                elif efficiency_ratio > 120:
+                    owner_stats["efficiency_insight"] = "High usage - potential under-allocation risk"
+                else:
+                    owner_stats["efficiency_insight"] = "Good efficiency - well-allocated memory"
+            
+            owner_memory_stats[owner] = owner_stats
+            
+            # Update totals
+            total_requested_memory += owner_requested_total
+            total_actual_memory += owner_actual_total
+            total_jobs += owner_jobs
+        
+        # Sort owners by total actual memory usage (descending)
+        sorted_owners = sorted(
+            owner_memory_stats.items(),
+            key=lambda x: x[1]['total_actual_memory_mb'],
+            reverse=True
+        )
+        
+        # Create rankings
+        rankings = []
+        for i, (owner, stats) in enumerate(sorted_owners, 1):
+            ranking_entry = {
+                "rank": i,
+                "owner": owner,
+                "total_actual_memory_mb": stats['total_actual_memory_mb'],
+                "total_requested_memory_mb": stats['total_requested_memory_mb'],
+                "memory_efficiency_percent": stats['memory_efficiency_percent'],
+                "total_jobs": stats['total_jobs'],
+                "percentage_of_total_memory": (stats['total_actual_memory_mb'] / total_actual_memory * 100) if total_actual_memory > 0 else 0
+            }
+            rankings.append(ranking_entry)
+        
+        # Calculate overall statistics
+        overall_efficiency = (total_actual_memory / total_requested_memory * 100) if total_requested_memory > 0 else 0
+        overall_memory_waste = total_requested_memory - total_actual_memory
+        
+        # Create detailed analysis
+        analysis = {
+            "summary": {
+                "total_jobs": total_jobs,
+                "total_owners": len(owner_memory_stats),
+                "total_actual_memory_mb": float(total_actual_memory),
+                "total_requested_memory_mb": float(total_requested_memory),
+                "overall_memory_efficiency_percent": float(overall_efficiency),
+                "overall_memory_waste_mb": float(overall_memory_waste),
+                "average_actual_memory_per_job": float(total_actual_memory / total_jobs) if total_jobs > 0 else 0,
+                "average_requested_memory_per_job": float(total_requested_memory / total_jobs) if total_jobs > 0 else 0
+            },
+            "rankings": rankings,
+            "owner_details": owner_memory_stats if include_details else {},
+            "insights": {
+                "top_memory_user": rankings[0]['owner'] if rankings else None,
+                "most_efficient_user": min(owner_memory_stats.items(), key=lambda x: abs(x[1]['memory_efficiency_percent'] - 100))[0] if owner_memory_stats else None,
+                "least_efficient_user": min(owner_memory_stats.items(), key=lambda x: x[1]['memory_efficiency_percent'])[0] if owner_memory_stats else None,
+                "highest_waste_user": max(owner_memory_stats.items(), key=lambda x: x[1]['memory_waste_mb'])[0] if owner_memory_stats else None
+            }
+        }
+        
+        # Add recommendations
+        recommendations = []
+        if overall_efficiency < 70:
+            recommendations.append("Overall memory efficiency is low - consider reviewing job memory requirements")
+        if overall_memory_waste > total_requested_memory * 0.3:
+            recommendations.append("Significant memory waste detected - optimize job memory allocations")
+        
+        for owner, stats in owner_memory_stats.items():
+            if stats['memory_efficiency_percent'] < 50:
+                recommendations.append(f"Owner '{owner}' has very low efficiency ({stats['memory_efficiency_percent']:.1f}%) - review memory allocations")
+            elif stats['memory_efficiency_percent'] > 120:
+                recommendations.append(f"Owner '{owner}' may be under-allocating memory ({stats['memory_efficiency_percent']:.1f}%) - risk of job failures")
+        
+        analysis["recommendations"] = recommendations
+        
+        result = {
+            "success": True,
+            "time_range": time_range,
+            "include_efficiency": include_efficiency,
+            "include_details": include_details,
+            "analysis": analysis
+        }
+        
+        log_tool_call(session_id, user_id, "analyze_memory_usage_by_owner", 
+                     {"time_range": time_range, "include_efficiency": include_efficiency, "include_details": include_details}, result)
+        return result
+        
+    except Exception as e:
+        result = {"success": False, "message": f"Error analyzing memory usage by owner: {str(e)}"}
+        log_tool_call(session_id, user_id, "analyze_memory_usage_by_owner", 
+                     {"time_range": time_range, "include_efficiency": include_efficiency, "include_details": include_details}, result)
+        return result
+
+
 ADK_AF_TOOLS = {
     "list_jobs": FunctionTool(func=list_jobs),
     "get_job_status": FunctionTool(func=get_job_status),
@@ -2133,6 +2327,9 @@ ADK_AF_TOOLS = {
     # HTCondor DataFrame Tools
     "get_dataframe_status": FunctionTool(func=get_dataframe_status_tool),
     "refresh_dataframe": FunctionTool(func=refresh_dataframe_tool),
+    
+    # Memory Analysis Tools
+    "analyze_memory_usage_by_owner": FunctionTool(func=analyze_memory_usage_by_owner),
 }
 
 
