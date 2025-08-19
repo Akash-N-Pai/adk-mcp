@@ -1373,7 +1373,6 @@ def generate_advanced_job_report(
             return result
         
         # Process DataFrame data with enhanced metrics
-        total_cpu = pd.to_numeric(df['remotesusercpu'], errors='coerce').fillna(0).sum() if 'remotesusercpu' in df.columns else 0
         total_memory = pd.to_numeric(df['memoryusage'], errors='coerce').fillna(0).sum() if 'memoryusage' in df.columns else 0
         total_disk = pd.to_numeric(df['imagesize'], errors='coerce').fillna(0).sum() if 'imagesize' in df.columns else 0
         
@@ -1386,12 +1385,10 @@ def generate_advanced_job_report(
             for owner in df['owner'].unique():
                 owner_df = df[df['owner'] == owner]
                 # Convert to numeric values to avoid string division issues
-                cpu_sum = pd.to_numeric(owner_df['remotesusercpu'], errors='coerce').fillna(0).sum() if 'remotesusercpu' in owner_df.columns else 0
                 memory_sum = pd.to_numeric(owner_df['memoryusage'], errors='coerce').fillna(0).sum() if 'memoryusage' in owner_df.columns else 0
                 
                 owner_stats[owner] = {
                     "jobs": len(owner_df),
-                    "cpu": cpu_sum,
                     "memory": memory_sum,
                     "completed": len(owner_df[owner_df['jobstatus'] == 4]) if 'jobstatus' in owner_df.columns else 0,
                     "failed": len(owner_df[owner_df['jobstatus'].isin([3, 5, 7])]) if 'jobstatus' in owner_df.columns else 0
@@ -1417,27 +1414,26 @@ def generate_advanced_job_report(
         failure_reasons = {}
         if 'exitcode' in df.columns:
             failed_jobs = df[df['jobstatus'].isin([3, 5, 7])]
-            failure_reasons = failed_jobs['exitcode'].value_counts().to_dict()
+            # Filter out exit code 0.0 (successful completion) from failure analysis
+            failed_jobs_with_exit_codes = failed_jobs[failed_jobs['exitcode'] != 0.0]
+            failed_jobs_with_exit_codes = failed_jobs_with_exit_codes[failed_jobs_with_exit_codes['exitcode'] != 0]
+            failure_reasons = failed_jobs_with_exit_codes['exitcode'].value_counts().to_dict()
         
         # Resource efficiency analysis
         resource_efficiency = []
-        if 'remotesusercpu' in df.columns and 'requestcpus' in df.columns and 'memoryusage' in df.columns and 'requestmemory' in df.columns:
-            efficiency_df = df[df['requestcpus'] > 0]
+        if 'memoryusage' in df.columns and 'requestmemory' in df.columns:
+            efficiency_df = df[df['requestmemory'] > 0]
             for _, row in efficiency_df.iterrows():
                 try:
                     # Convert to numeric values, handling any string values
-                    remotesusercpu = pd.to_numeric(row['remotesusercpu'], errors='coerce') or 0
-                    requestcpus = pd.to_numeric(row['requestcpus'], errors='coerce') or 1
                     memoryusage = pd.to_numeric(row['memoryusage'], errors='coerce') or 0
                     requestmemory = pd.to_numeric(row['requestmemory'], errors='coerce') or 1
                     
-                    cpu_efficiency = remotesusercpu / requestcpus if requestcpus > 0 else 0
                     memory_efficiency = memoryusage / requestmemory if requestmemory > 0 else 0
                     resource_efficiency.append({
                         "cluster_id": row.get('clusterid'),
-                        "cpu_efficiency": cpu_efficiency,
                         "memory_efficiency": memory_efficiency,
-                        "overall_efficiency": (cpu_efficiency + memory_efficiency) / 2
+                        "overall_efficiency": memory_efficiency
                     })
                 except (ValueError, TypeError, ZeroDivisionError):
                     # Skip this row if there are conversion issues
@@ -1468,7 +1464,6 @@ def generate_advanced_job_report(
         completion_rate = (completed_jobs / total_jobs * 100) if total_jobs > 0 else 0
         
         # Resource utilization analysis
-        avg_cpu_per_job = total_cpu / total_jobs if total_jobs > 0 else 0
         avg_memory_per_job = total_memory / total_jobs if total_jobs > 0 else 0
         avg_disk_per_job = total_disk / total_jobs if total_jobs > 0 else 0
         
@@ -1541,11 +1536,9 @@ def generate_advanced_job_report(
                 "failure_rate_percent": failure_rate,
                 "completion_rate_percent": completion_rate,
                 "final_jobs": final_jobs,
-                "total_cpu_time": total_cpu,
                 "total_memory_usage_mb": total_memory,
                 "total_disk_usage_mb": total_disk,
                 "average_completion_time_seconds": avg_completion_time,
-                "average_cpu_per_job": avg_cpu_per_job,
                 "average_memory_per_job": avg_memory_per_job,
                 "average_disk_per_job": avg_disk_per_job
             },
@@ -1555,9 +1548,7 @@ def generate_advanced_job_report(
                     "completed_jobs": stats["completed"],
                     "failed_jobs": stats["failed"],
                     "success_rate": (stats["completed"] / stats["jobs"] * 100) if stats["jobs"] > 0 else 0,
-                    "total_cpu_time": stats["cpu"],
-                    "total_memory_usage": stats["memory"],
-                    "average_cpu_per_job": stats["cpu"] / stats["jobs"] if stats["jobs"] > 0 else 0
+                    "total_memory_usage": stats["memory"]
                 }
                 for owner, stats in owner_stats.items()
             },
@@ -1665,7 +1656,6 @@ def generate_advanced_job_report(
             text_lines.append(f"Failure Rate: {summary.get('failure_rate_percent', 'N/A'):.2f}%")
             text_lines.append(f"Completion Rate: {summary.get('completion_rate_percent', 'N/A'):.2f}%")
             text_lines.append(f"Final Jobs: {summary.get('final_jobs', 'N/A')} (completed + failed)")
-            text_lines.append(f"Total CPU Time: {summary.get('total_cpu_time', 'N/A'):.2f}")
             text_lines.append(f"Total Memory Usage: {summary.get('total_memory_usage_mb', 'N/A'):.2f} MB")
             text_lines.append(f"Average Completion Time: {summary.get('average_completion_time_seconds', 'N/A'):.2f} seconds")
             text_lines.append("")
@@ -1681,7 +1671,9 @@ def generate_advanced_job_report(
                     5: "Held",
                     7: "Suspended"
                 }
-                for status, count in summary['status_distribution'].items():
+                # Show all possible statuses, even if count is 0
+                for status in sorted(status_descriptions.keys()):
+                    count = summary['status_distribution'].get(status, 0)
                     desc = status_descriptions.get(status, "Unknown")
                     percentage = (count / summary.get('total_jobs', 1) * 100) if summary.get('total_jobs', 0) > 0 else 0
                     text_lines.append(f"Status {status} ({desc}): {count} jobs ({percentage:.2f}%)")
@@ -1694,7 +1686,6 @@ def generate_advanced_job_report(
                     text_lines.append(f"Owner: {owner}")
                     text_lines.append(f"  Total Jobs: {stats.get('total_jobs', 'N/A')}")
                     text_lines.append(f"  Success Rate: {stats.get('success_rate', 'N/A'):.2f}%")
-                    text_lines.append(f"  Total CPU Time: {stats.get('total_cpu_time', 'N/A'):.2f}")
                     text_lines.append("")
             
             # Performance insights
