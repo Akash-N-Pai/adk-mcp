@@ -19,10 +19,8 @@ pip install -r requirements.txt
 # Set up API key
 echo "GOOGLE_API_KEY=your_gemini_api_key_here" > .env
 
-# Run tests
-python -m pytest
 
-# Run evaluation (must have the coversation in jason format)
+# Run evaluation (must have the coversation in json format)
 python eval.py
 
 # Start agent (web interface)
