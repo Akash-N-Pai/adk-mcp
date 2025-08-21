@@ -1,0 +1,819 @@
+{
+    "eval_cases": [
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "hi"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Welcome! I can see you have 4 previous sessions. Would you like to continue your last session or start fresh?"
+                }
+              ]
+            }
+          },
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "yes please"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "OK. I have continued your last session. Based on your last interaction, you were looking at job 6747432. The status was:\n\nJob Status for Cluster 6747432:\n- **Status**: Held (5)\n- **Owner**: srettie\n- **Command**: sh\n- **Arguments**: -c /usr/local/bin/python3.12 '-m' 'distributed.cli.dask_worker' 'tls://sebastien-2erettie-40cern-2ech.dask.casadev.af.uchicago.edu:8786' '--name' 'CoffeaCasaCluster-3243' '--nthreads' '1' '--memory-limit' '3.00GiB' '--nanny' '--death-timeout' '180' '--protocol' 'tls://' '--tls-ca-file' '/etc/cmsaf-secrets/ca.pem' '--tls-cert' '/etc/cmsaf-secrets/hostcert.pem' '--tls-key' '/etc/cmsaf-secrets/hostcert.pem'\n- **Working Directory**: /var/lib/condor/spool/7432/0/cluster6747432.proc0.subproc0\n\n**Resource Usage:**\n- CPUs: 1\n- Memory: 3072 MB (3 GB)\n- Disk: 1500 MB (1 GB)\n\n**Timing:**\n- Queue Date: 2025-08-06T11:24:00\n\n**Files:**\n- Input: /dev/null\n- Output: _condor_stdout\n- Error: _condor_stderr\n- Log: worker-6747432.log\n\nDo you want to do anything else with this job?"
+                }
+              ]
+            }
+          },
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "what else can you do"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Here are the available tools, organized by category:\n\nBasic Job Management:\n\nlist_jobs: List jobs with optional filtering (owner, status, limit)\n\nget_job_status: Get detailed status for a specific job cluster ID\nsubmit_job: Submit a new job with submit description\n\nAdvanced Job Information:\n\nget_job_history: Get job execution history for a specific cluster ID\n\nReporting and Analytics:\n\ngenerate_job_report: Generate comprehensive job reports\nget_utilization_stats: Get resource utilization statistics\nexport_job_data: Export job data in various formats (JSON, CSV)\n\nContext-Aware Tools (ADK Context Integration):\nsave_job_report: Save a job report as an artifact using ADK Context\nload_job_report: Load a previously saved job report using ADK Context\nsearch_job_memory: Search memory for job-related information using ADK Context\nget_user_context_summary: Get a comprehensive summary of the user's context and history\nadd_to_memory: Add information to memory using ADK Context\n\nSession Management:\n\nlist_user_sessions: List all your sessions\ncontinue_last_session: Continue your most recent session\ncontinue_specific_session: Continue a specific session by ID\nstart_fresh_session: Start a completely new session\nget_session_history: Get full conversation history for a session\nget_session_summary: Get summary of what was done in a session\nget_user_conversation_memory: Get memory across all your sessions\n\nWhat would you like to do?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "get job history for 6747432"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "I'm sorry, but I was unable to retrieve the job history for job 6747432. The error message says \"Job not found\". Would you like me to check the status of the job again, or perhaps try a different job?"
+                }
+              ]
+            }
+          }
+        ]
+    },
+    {
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [
+              {
+                  "text": "what is the session id of this"
+              }
+            ]
+          },
+          "final_response": {
+            "parts": [
+              {
+                  "text": "The session ID of this session is 34eb1880-9be3-47e6-8282-cc05c363ab13."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "list all session ids"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Here are all your session IDs:\n\n34eb1880-9be3-47e6-8282-cc05c363ab13 (This is the current session)\na67c049e-3ae5-4f4e-b7d9-17f70550c9b2\n55433d61-a74c-4cc8-992e-321ece1b9d13\n3b7242e7-8d69-4132-8f39-152ef8cb057b"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "can we switch to a67c049e-3ae5-4f4e-b7d9-17f70550c9b2 session"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "OK, I've switched to session a67c049e-3ae5-4f4e-b7d9-17f70550c9b2. Here's a summary of what happened in that session:\n\nlist_jobs: You listed the first 10 held jobs. The following jobs were referenced: 6739410, 6739411, 6738118, 6746398, 6747432, 6747433, 6738117, 6738116, 6747434, 6746397\n\nWhat would you like to do now?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "list all the running jobs now"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "| ClusterId | ProcId | Status | Owner    |\n|-----------|--------|--------|----------|\n| 6778486   | 0      | Running | srettie  |\n| 6778491   | 0      | Running | srettie  |\n| 6761417   | 0      | Running | rabalasu |\n| 6761419   | 0      | Running | rabalasu |\n| 6690515   | 0      | Running | maclwong |\n| 6778500   | 0      | Running | srettie  |\n| 6761421   | 0      | Running | rabalasu |\n| 6778501   | 0      | Running | srettie  |\n| 6761422   | 0      | Running | rabalasu |\n| 6778502   | 0      | Running | srettie  |\nThere are a total of 411 running jobs."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "give me the history of 6778486 job"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Job History for Cluster 6778486:\n- **Total Events**: 2\n- **Current Status**: Running (2)\n\n| Timestamp           | Event         | Status  |\n|---------------------|---------------|---------|\n| 2025-08-07T11:05:33 | Job submitted | Idle    |\n| 2025-08-07T11:06:51 | Job started   | Running |"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "end session"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "OK. Is there anything else I can help you with?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "hi"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Welcome! I can see you have 4 previous sessions. It looks like you were last active in session 'a67c049e-3ae5-4f4e-b7d9-17f70550c9b2'. Would you like to continue your last session or start fresh?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "what did we do in this session"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Which session are you referring to?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "a67c049e-3ae5-4f4e-b7d9-17f70550c9b2"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Here's a summary of what you did in session a67c049e-3ae5-4f4e-b7d9-17f70550c9b2: \n\n You used the following tools: list_jobs (2 times), get_session_summary, get_session_history, continue_specific_session, and get_job_history. There were also 12 calls to an Unknown tool.\n\n You referenced job 6778486.\n\n In short, you listed held jobs, switched to this session, listed running jobs and got the history of job 6778486.\n\n Would you like to continue this session?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "List All Jobs"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "| ClusterId | ProcId | Status    | Owner    |\n|-----------|--------|-----------|----------|\n| 6776674   | 0      | Removed   | srettie  |\n| 6772016   | 0      | Held      | srettie  |\n| 6767358   | 0      | Held      | srettie  |\n| 6759336   | 0      | Held      | srettie  |\n| 6757007   | 0      | Held      | srettie  |\n| 6776933   | 0      | Held      | srettie  |\n| 6719743   | 0      | Completed | srettie  |\n| 6771240   | 0      | Held      | srettie  |\n| 6766582   | 0      | Held      | srettie  |\n| 6772534   | 0      | Held      | srettie  |\nThere are a total of 3977 jobs."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "Show Running Jobs"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "| ClusterId | ProcId | Status | Owner    |\n|-----------|--------|--------|----------|\n| 6778745   | 0      | Running | srettie  |\n| 6778747   | 0      | Running | srettie  |\n| 6761417   | 0      | Running | rabalasu |\n| 6761419   | 0      | Running | rabalasu |\n| 6690515   | 0      | Running | maclwong |\n| 6778500   | 0      | Running | srettie  |\n| 6761421   | 0      | Running | rabalasu |\n| 6761422   | 0      | Running | rabalasu |\n| 6761424   | 0      | Running | rabalasu |\n| 6761425   | 0      | Running | rabalasu |\nThere are a total of 289 running jobs."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "show me jobs for user jareddb2"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "There are no jobs for user jareddb2."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "show me jobs for user rabalasu"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "| ClusterId | ProcId | Status | Owner    |\n|-----------|--------|--------|----------|\n| 6761417   | 0      | Running | rabalasu |\n| 6761419   | 0      | Running | rabalasu |\n| 6761421   | 0      | Running | rabalasu |\n| 6761422   | 0      | Running | rabalasu |\n| 6761424   | 0      | Running | rabalasu |\n| 6761425   | 0      | Running | rabalasu |\n| 6761426   | 0      | Running | rabalasu |\n| 6761427   | 0      | Running | rabalasu |\n| 6761429   | 0      | Running | rabalasu |\n| 6761431   | 0      | Running | rabalasu |\nThere are a total of 25 jobs for user rabalasu."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "list jobs with status 'Held'"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "| ClusterId | ProcId | Status | Owner    |\n|-----------|--------|--------|----------|\n| 6772016   | 0      | Held   | srettie  |\n| 6767358   | 0      | Held   | srettie  |\n| 6759336   | 0      | Held   | srettie  |\n| 6757007   | 0      | Held   | srettie  |\n| 6776933   | 0      | Held   | srettie  |\n| 6771240   | 0      | Held   | srettie  |\n| 6766582   | 0      | Held   | srettie  |\n| 6772534   | 0      | Held   | srettie  |\n| 6767876   | 0      | Held   | srettie  |\n| 6760889   | 0      | Held   | srettie  |\nThere are a total of 3462 jobs with status 'Held'."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "get job status of 6772016"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Job Status for Cluster 6772016:\n- **Status**: Held (5)\n- **Owner**: srettie\n- **Command**: sh\n- **Arguments**: -c /usr/local/bin/python3.12' '-m' 'distributed.cli.dask_worker' 'tls://sebastien-2erettie-40cern-2ech.dask.casadev.af.uchicago.edu:8786' '--name' 'CoffeaCasaCluster-245' '--nthreads' '1' '--memory-limit' '3.00GiB' '--nanny' '--death-timeout' '180' '--protocol' 'tls://' '--tls-ca-file' '/etc/cmsaf-secrets/ca.pem' '--tls-cert' '/etc/cmsaf-secrets/hostcert.pem' '--tls-key' '/etc/cmsaf-secrets/hostcert.pem\n- **Working Directory**: /var/lib/condor/spool/2016/0/cluster6772016.proc0.subproc0\n\n**Resource Usage:**\n- CPUs: 1\n- Memory: 3072 MB (3 GB)\n- Disk: 1500 MB (1 GB)\n\n**Timing:**\n- Queue Date: 2025-08-07T09:53:32\n\n**Files:**\n- Input: /dev/null\n- Output: _condor_stdout\n- Error: _condor_stderr\n- Log: worker-6772016.log "
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "get job history of 6772016"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Job History for Cluster 6772016:\n- **Total Events**: 1\n- **Current Status**: Held (5)\n\n| Timestamp           | Event         | Status |\n|---------------------|---------------|--------|\n| 2025-08-07T09:53:32 | Job submitted | Idle   |"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "when was job 6767876 submitted?"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Job History for Cluster 6767876:\n- **Total Events**: 1\n- **Current Status**: Held (5)\n\n| Timestamp           | Event         | Status |\n|---------------------|---------------|--------|\n| 2025-08-07T06:31:48 | Job submitted | Idle   |\nJob 6767876 was submitted on 2025-08-07 at 06:31:48."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "list all my sessions"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Here are all your sessions:\n\na67c049e-3ae5-4f4e-b7d9-17f70550c9b2 (This is the current session)\n34eb1880-9be3-47e6-8282-cc05c363ab13\n55433d61-a74c-4cc8-992e-321ece1b9d13\n3b7242e7-8d69-4132-8f39-152ef8cb057b"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "can we go to this session 3b7242e7-8d69-4132-8f39-152ef8cb057b"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "OK, I've switched to session 3b7242e7-8d69-4132-8f39-152ef8cb057b.\n\nIn this session, you listed the first 10 running jobs. They were all owned by maclwong.\n\n| ClusterId | ProcId | Status | Owner    |\n|-----------|--------|--------|----------|\n| 6690515   | 0      | Running | maclwong |\n| 6690522   | 0      | Running | maclwong |\n| 6690533   | 0      | Running | maclwong |\n| 6690536   | 0      | Running | maclwong |\n| 6690542   | 0      | Running | maclwong |\n| 6690544   | 0      | Running | maclwong |\n| 6690559   | 0      | Running | maclwong |\n| 6690564   | 0      | Running | maclwong |\n| 6690585   | 0      | Running | maclwong |\n| 6690589   | 0      | Running | maclwong |\nWhat would you like to do in this session?"
+
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "generate job report for maclwong"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Here is the job report for maclwong:\n\nReport Metadata:\n\nGenerated at: 2025-08-07T11:30:44.776570\nOwner filter: maclwong\nTime range: all\nTotal jobs: 19\nSummary:\n\nTotal jobs: 19\nStatus distribution: Running: 19\nTotal CPU time: 3369.0\nTotal memory usage: 2422\nAverage CPU per job: 177.32\nAverage memory per job: 127.47\nJob Details:\n\n(Showing only a few jobs for brevity)\n\nClusterId: 6690515, ProcId: 0, JobStatus: 2, Owner: maclwong, QDate: 1754404051, RemoteUserCPU: 175.0, RemoteSysCPU: 257.0, ImageSize: 325000, MemoryUsage: 98, CommittedTime: 0\nClusterId: 6690522, ProcId: 0, JobStatus: 2, Owner: maclwong, QDate: 1754404052, RemoteUserCPU: 189.0, RemoteSysCPU: 234.0, ImageSize: 350000, MemoryUsage: 98, CommittedTime: 0\nClusterId: 6690533, ProcId: 0, JobStatus: 2, Owner: maclwong, QDate: 1754404052, RemoteUserCPU: 154.0, RemoteSysCPU: 230.0, ImageSize: 325000, MemoryUsage: 98, CommittedTime: 0\n... (rest of the jobs)"
+
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "get utilization stats"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Here are the utilization statistics for the last 24 hours: \n\n Utilization Statistics: \n- **Time Range**: 24h \n- **Total Jobs**: 3889 \n- **Completed Jobs**: 0 \n- **Completion Rate**: 0.0 \n- **Total CPU Time**: 4254003.0 \n- **Total Memory Usage**: 1140419 \n- **Average Completion Time**: 0 \n- **CPU Utilization Percent**: 0.85% \n- **Memory Utilization Percent**: 6.21% \n\n System Capacity: \n- **Total CPUs**: 5803 \n- **Total Memory (MB)**: 18376693"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "show me system utilization statistics past 3 days"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Here are the system utilization statistics for the past 3 days: \n\n Utilization Statistics: \n- **Time Range**: 3d \n- **Total Jobs**: 4059 \n- **Completed Jobs**: 172 \n- **Completion Rate**: 4.24% \n- **Total CPU Time**: 4523365.0 \n- **Total Memory Usage**: 1304014 \n- **Average Completion Time**: 1379.81 \n- **CPU Utilization Percent**: 7.21% \n- **Memory Utilization Percent**: 7.11% \n\n System Capacity: \n- **Total CPUs**: 5808 \n- **Total Memory (MB)**: 18340246"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "what have I been working on across all sessions?"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Across all your sessions, here's a summary of what you've been working on: \n\n Tools Used: You have used list_jobs, start_fresh_session, get_job_status, continue_last_session, get_job_history, get_session_summary, get_session_history, continue_specific_session, generate_job_report, and get_utilization_stats. There are also numerous calls to an Unknown tool. \n\n Jobs Referenced: You have referenced jobs 6747432, 6772016, and 6767876. \n\n Sessions: You have had 4 sessions in total. \n\n Session 3b7242e7-8d69-4132-8f39-152ef8cb057b was created on 2025-08-07 at 02:31:04 and last accessed on 2025-08-07 at 16:32:22 (18 conversations) \n\n Session a67c049e-3ae5-4f4e-b7d9-17f70550c9b2 was created on 2025-08-07 at 02:38:45 and last accessed on 2025-08-07 at 16:29:53 (61 conversations) \n\n Session 34eb1880-9be3-47e6-8282-cc05c363ab13 was created on 2025-08-07 at 02:39:07 and last accessed on 2025-08-07 at 16:10:18 (16 conversations) \n\n Session 55433d61-a74c-4cc8-992e-321ece1b9d13 was created on 2025-08-07 at 02:38:31 and last accessed on 2025-08-07 at 02:38:31 (1 conversation) \n\n You have been listing jobs, checking job statuses and history, generating reports, and checking utilization statistics. You also switched between sessions and continued your last session."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "show me my context summary"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Here is your context summary:\n\nUser Context Summary:\n- **User ID**: akashvnp\n- **Session ID**: 3b7242e7-8d69-4132-8f39-152ef8cb057b\n- **Current Jobs**: []\n- **Recent Job History**: []\n- **User Preferences**: {}\n- **Memory Entries**: 273\n- **Session Active**: true"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "remember that I prefer table format"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "OK. I have saved your preference to use table format for the output."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "how do i like the output?"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "I have saved your preference to use table format for the output. \n\n To clarify, do you mean to ask \"How do I set the output format to table?\" \n\n If yes, I have already remembered your preference to use table format. \n\n Is there anything else I can help you with?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "end sesion"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "OK. Is there anything else I can help you with?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "no"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Okay, have a great day!"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "ok"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Hello! I see you have several past sessions. Would you like me to continue from where you left off in the most recent one, or would you like to start a new session?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "how may sessions do i have"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "You have 4 sessions."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "start new session"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "OK. I have started a fresh session for you."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "statsu of job 6690515"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Job Status for Cluster 6690515:\n- **Status**: Running (2)\n- **Owner**: maclwong\n- **Command**: /bin/sh\n- **Arguments**: -c /home/maclwong/SUSY_Run2/light-roast/.pixi/envs/af/bin/python' '-m' 'distributed.cli.dask_worker' 'tcp://192.170.240.106:4889' '--name' 'HTCondorCluster-78' '--nthreads' '1' '--memory-limit' '0.93GiB' '--nworkers' '4' '--nanny' '--death-timeout' '60\n- **Working Directory**: /home/maclwong/SUSY_Run2/light-roast/Official_Scripts\n\n**Resource Usage:**\n- CPUs: 4\n- Memory: 98 MB\n- Disk: 1500 MB (1 GB)\n\n**Timing:**\n- Queue Date: 2025-08-05T09:27:31\n- Job Start Date: 2025-08-05T09:29:22\n- Current Start Date: 2025-08-05T09:29:22\n\n**Execution Host**: slot1_5@7lhwn@c112.af.uchicago.edu\n\n**Files:**\n- Input: /dev/null\n- Output: /home/maclwong/SUSY_Run2/light-roast/Official_Scripts/.condor_logs/cutflows_v3/worker-6690515.0.out\n- Error: /home/maclwong/SUSY_Run2/light-roast/Official_Scripts/.condor_logs/cutflows_v3/worker-6690515.0.err\n- Log: /home/maclwong/SUSY_Run2/light-roast/Official_Scripts/.condor_logs/cutflows_v3/worker-6690515.log"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "history of 6690515"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Job History for Cluster 6690515:\n- **Total Events**: 2\n- **Current Status**: Running (2)\n\n| Timestamp           | Event         | Status  |\n|---------------------|---------------|---------|\n| 2025-08-05T09:27:31 | Job submitted | Idle    |\n| 2025-08-05T09:29:22 | Job started   | Running |"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "end session"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Ok, is there anything else I can help you with?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "no"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Okay, have a great day!"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "hi"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Welcome! I see you have 5 previous sessions. Would you like to continue your last session or start fresh?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "conversation": [
+          {
+            "user_content": {
+              "parts": [
+                {
+                  "text": "yes start new session"
+                }
+              ]
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "OK. I have started a fresh session for you."
+
+              }
+            ]
+          }
+        }
+      ]
+    }
+    ]
+  }
