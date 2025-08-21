@@ -2,9 +2,13 @@ import json
 import openai
 import os
 from time import sleep
+from dotenv import load_dotenv
 
 # Setup
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Load environment variables from a .env file if present, and rely on
+# OPENAI_API_KEY being provided via env (do not pass None explicitly).
+load_dotenv()
+client = openai.OpenAI()
 INPUT_FILE = "htcondor_agent_testfile.test.json"
 OUTPUT_FILE = "evaluated_eval_cases.json"
 
