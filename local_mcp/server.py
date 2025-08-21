@@ -2787,11 +2787,17 @@ def generate_and_run_dataframe_python(instruction: str, timeout_seconds: int = 8
             }
         }
 
+        # Combine system instructions with user prompt for Gemini
+        full_prompt = f"""
+{system_rules}
+
+User Request: {json.dumps(user_prompt)}
+
+Please generate Python code that follows the rules above to fulfill this request.
+"""
+        
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content([
-            {"role": "system", "parts": [system_rules]},
-            {"role": "user", "parts": [json.dumps(user_prompt)]},
-        ])
+        response = model.generate_content(full_prompt)
         text = getattr(response, "text", "") or ""
         code = _extract_code_from_text(text)
 
