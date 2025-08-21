@@ -8,6 +8,14 @@ import sqlite3
 import pandas as pd
 import numpy as np
 from collections import defaultdict
+import io
+import tempfile
+import signal
+import traceback
+import contextlib
+import math
+import statistics
+import re
 
 import mcp.server.stdio
 from dotenv import load_dotenv
@@ -18,6 +26,7 @@ from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 import htcondor
 from typing import Optional
+import google.generativeai as genai
 
 # Import simplified session context management - handle both relative and absolute imports
 try:
@@ -2316,6 +2325,485 @@ def analyze_memory_usage_by_owner(
         return result
 
 
+def _restricted_builtins():
+    """Return a minimal set of safe builtins for sandboxed execution."""
+    allowed = {
+        "__import__": __import__,
+        "abs": abs,
+        "min": min,
+        "max": max,
+        "sum": sum,
+        "len": len,
+        "range": range,
+        "enumerate": enumerate,
+        "zip": zip,
+        "sorted": sorted,
+        "map": map,
+        "filter": filter,
+        "any": any,
+        "all": all,
+        "round": round,
+        "print": print,
+        "int": int,
+        "float": float,
+        "str": str,
+        "bool": bool,
+        "list": list,
+        "dict": dict,
+        "set": set,
+        "tuple": tuple,
+        "type": type,
+        "isinstance": isinstance,
+        "hasattr": hasattr,
+        "getattr": getattr,
+        "setattr": setattr,
+        "dir": dir,
+        "vars": vars,
+        "repr": repr,
+        "format": format,
+        "chr": chr,
+        "ord": ord,
+        "hex": hex,
+        "oct": oct,
+        "bin": bin,
+        "pow": pow,
+        "divmod": divmod,
+        "complex": complex,
+        "slice": slice,
+        "property": property,
+        "super": super,
+        "object": object,
+        "staticmethod": staticmethod,
+        "classmethod": classmethod,
+        # Add numpy/pandas specific methods
+        "nan": float('nan'),
+        "inf": float('inf'),
+        "isnan": lambda x: x != x,  # Simple NaN check
+    }
+    return allowed
+
+
+def _json_safe(obj):
+    """Convert objects (including numpy/pandas) to JSON-serializable types."""
+    try:
+        import numpy as _np
+        import pandas as _pd
+        if isinstance(obj, _np.generic):
+            return obj.item()
+        if isinstance(obj, _np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, _pd.Timestamp):
+            return obj.isoformat()
+        if isinstance(obj, _pd.Series):
+            return obj.to_dict()
+        if isinstance(obj, _pd.DataFrame):
+            return obj.to_dict(orient="records")
+    except Exception:
+        pass
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
+def _create_text_histogram(data, bins=10, title="Histogram"):
+    """Create a text-based histogram for data visualization."""
+    try:
+        if hasattr(data, 'values'):
+            data = data.values
+        data = np.array(data)
+        data = data[~np.isnan(data)]  # Remove NaN values
+        
+        if len(data) == 0:
+            return f"{title}\nNo data available"
+        
+        hist, bin_edges = np.histogram(data, bins=bins)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        # Find max count for scaling
+        max_count = max(hist)
+        if max_count == 0:
+            return f"{title}\nAll bins are empty"
+        
+        # Create text histogram
+        result = [f"{title}", f"Data range: {data.min():.2f} to {data.max():.2f}", f"Total points: {len(data)}", ""]
+        
+        for i, (center, count) in enumerate(zip(bin_centers, hist)):
+            bar_length = int(50 * count / max_count) if max_count > 0 else 0
+            bar = "█" * bar_length
+            result.append(f"{center:8.2f} | {bar} {count}")
+        
+        return "\n".join(result)
+    except Exception as e:
+        return f"Error creating histogram: {e}"
+
+
+def _create_text_bar_chart(x, y, title="Bar Chart"):
+    """Create a text-based bar chart for data visualization."""
+    try:
+        if hasattr(x, 'values'):
+            x = x.values
+        if hasattr(y, 'values'):
+            y = y.values
+        
+        x = np.array(x)
+        y = np.array(y)
+        
+        if len(x) != len(y):
+            return f"Error: x and y must have the same length (x: {len(x)}, y: {len(y)})"
+        
+        if len(x) == 0:
+            return f"{title}\nNo data available"
+        
+        # Find max value for scaling
+        max_val = max(y)
+        if max_val == 0:
+            return f"{title}\nAll values are zero"
+        
+        result = [f"{title}", ""]
+        
+        for i, (x_val, y_val) in enumerate(zip(x, y)):
+            bar_length = int(50 * y_val / max_val) if max_val > 0 else 0
+            bar = "█" * bar_length
+            result.append(f"{str(x_val):<15} | {bar} {y_val:.2f}")
+        
+        return "\n".join(result)
+    except Exception as e:
+        return f"Error creating bar chart: {e}"
+
+
+def _create_text_scatter_plot(x, y, title="Scatter Plot"):
+    """Create a text-based scatter plot for data visualization."""
+    try:
+        if hasattr(x, 'values'):
+            x = x.values
+        if hasattr(y, 'values'):
+            y = y.values
+        
+        x = np.array(x)
+        y = np.array(y)
+        
+        if len(x) != len(y):
+            return f"Error: x and y must have the same length (x: {len(x)}, y: {len(y)})"
+        
+        if len(x) == 0:
+            return f"{title}\nNo data available"
+        
+        # Calculate statistics
+        correlation = np.corrcoef(x, y)[0, 1] if len(x) > 1 else 0
+        
+        result = [
+            f"{title}",
+            f"Data points: {len(x)}",
+            f"Correlation: {correlation:.3f}",
+            f"X range: {x.min():.2f} to {x.max():.2f}",
+            f"Y range: {y.min():.2f} to {y.max():.2f}",
+            ""
+        ]
+        
+        # Show first few points as examples
+        max_points = min(10, len(x))
+        for i in range(max_points):
+            result.append(f"Point {i+1}: ({x[i]:.2f}, {y[i]:.2f})")
+        if len(x) > max_points:
+            result.append(f"... and {len(x) - max_points} more points")
+        
+        return "\n".join(result)
+    except Exception as e:
+        return f"Error creating scatter plot: {e}"
+
+
+def _calculate_skewness(arr):
+    """Calculate skewness of an array."""
+    try:
+        arr = np.array(arr)
+        arr = arr[~np.isnan(arr)]
+        if len(arr) < 3:
+            return 0.0
+        mean = np.mean(arr)
+        std = np.std(arr)
+        if std == 0:
+            return 0.0
+        return np.mean(((arr - mean) / std) ** 3)
+    except Exception:
+        return 0.0
+
+
+def _calculate_kurtosis(arr):
+    """Calculate kurtosis of an array."""
+    try:
+        arr = np.array(arr)
+        arr = arr[~np.isnan(arr)]
+        if len(arr) < 4:
+            return 0.0
+        mean = np.mean(arr)
+        std = np.std(arr)
+        if std == 0:
+            return 0.0
+        return np.mean(((arr - mean) / std) ** 4) - 3
+    except Exception:
+        return 0.0
+
+
+def _calculate_mode(arr):
+    """Calculate mode of an array."""
+    try:
+        arr = np.array(arr)
+        arr = arr[~np.isnan(arr)]
+        if len(arr) == 0:
+            return None
+        values, counts = np.unique(arr, return_counts=True)
+        return values[np.argmax(counts)]
+    except Exception:
+        return None
+
+
+def _simple_kmeans(data, k):
+    """Simple k-means clustering implementation."""
+    try:
+        data = np.array(data)
+        if len(data) < k:
+            return np.zeros(len(data))
+        
+        # Initialize centroids randomly
+        centroids = data[np.random.choice(len(data), k, replace=False)]
+        
+        for _ in range(10):  # Max 10 iterations
+            # Assign points to nearest centroid
+            distances = np.array([np.linalg.norm(data - c, axis=1) for c in centroids])
+            labels = np.argmin(distances, axis=0)
+            
+            # Update centroids
+            new_centroids = np.array([data[labels == i].mean(axis=0) if np.sum(labels == i) > 0 else centroids[i] for i in range(k)])
+            
+            if np.allclose(centroids, new_centroids):
+                break
+            centroids = new_centroids
+        
+        return labels
+    except Exception:
+        return np.zeros(len(data))
+
+
+def _execute_user_code(user_code: str, env: dict, timeout_seconds: int = 5) -> dict:
+    """Execute user code with a timeout and capture stdout; return result dict."""
+    import threading
+    import time
+    
+    # Prepare stdout capture
+    stdout_buffer = io.StringIO()
+    exec_globals = {"__builtins__": _restricted_builtins()}
+    exec_locals = env.copy()
+    
+    # Track execution state
+    execution_complete = threading.Event()
+    execution_error = None
+    execution_result = None
+
+    def _runner():
+        nonlocal execution_error, execution_result
+        try:
+            with contextlib.redirect_stdout(stdout_buffer):
+                exec(user_code, exec_globals, exec_locals)
+            execution_result = exec_locals
+        except Exception as e:
+            execution_error = e
+        finally:
+            execution_complete.set()
+
+    # Start execution in a separate thread
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    
+    # Wait for completion or timeout
+    if execution_complete.wait(timeout=timeout_seconds):
+        # Execution completed
+        if execution_error:
+            return {
+                "success": False,
+                "message": f"Execution error: {execution_error}",
+                "stdout": stdout_buffer.getvalue(),
+            }
+        else:
+            # Collect outputs
+            output = {
+                "stdout": stdout_buffer.getvalue(),
+            }
+            # If the script set a variable named `result`, include it
+            if execution_result and "result" in execution_result:
+                output["result"] = _json_safe(execution_result["result"])
+            return {"success": True, "output": output}
+    else:
+        # Timeout occurred
+        return {
+            "success": False,
+            "message": f"Execution timed out after {timeout_seconds} seconds",
+            "stdout": stdout_buffer.getvalue(),
+        }
+
+
+def run_dataframe_python(code: str, timeout_seconds: int = 5, tool_context=None) -> dict:
+    """Run user Python code against the global DataFrame in a restricted sandbox.
+
+    Usage pattern in code:
+      - The DataFrame is available as `df`
+      - Set a variable named `result` to return structured data
+      - Print to stdout for textual output; both will be captured
+    """
+    session_id, user_id = ensure_session_exists(tool_context)
+
+    try:
+        df = get_jobs_from_global_dataframe()
+        if len(df) == 0:
+            result = {
+                "success": True,
+                "message": "Global DataFrame is empty; no job data available",
+                "output": {"stdout": ""}
+            }
+            log_tool_call(session_id, user_id, "run_dataframe_python", {"timeout_seconds": timeout_seconds}, result)
+            return result
+
+        # Provide a minimal environment for the user code
+        env = {
+            "df": df.copy(),  # Provide a copy so user cannot mutate the global
+            "pd": pd,
+            "np": np,
+            "datetime": datetime,
+            "math": math,
+            "statistics": statistics,
+            # Add commonly needed pandas/numpy methods
+            "nan": float('nan'),
+            "inf": float('inf'),
+            "isnan": lambda x: x != x,
+            "percentile": lambda arr, p: np.percentile(arr, p),
+            "corr": lambda x, y: x.corr(y) if hasattr(x, 'corr') else np.corrcoef(x, y)[0, 1],
+            # Add more statistical functions
+            "mean": lambda arr: np.mean(arr),
+            "median": lambda arr: np.median(arr),
+            "std": lambda arr: np.std(arr),
+            "var": lambda arr: np.var(arr),
+            "min": lambda arr: np.min(arr),
+            "max": lambda arr: np.max(arr),
+            "sum": lambda arr: np.sum(arr),
+            "count": lambda arr: len(arr),
+            "unique": lambda arr: np.unique(arr),
+            "sort": lambda arr: np.sort(arr),
+            # Add datetime utilities
+            "pd_timestamp": pd.Timestamp,
+            "pd_timedelta": pd.Timedelta,
+            "pd_period": pd.Period,
+            # Add plotting capabilities (text-based)
+            "plot_histogram": lambda data, bins=10, title="Histogram": _create_text_histogram(data, bins, title),
+            "plot_bar": lambda x, y, title="Bar Chart": _create_text_bar_chart(x, y, title),
+            "plot_scatter": lambda x, y, title="Scatter Plot": _create_text_scatter_plot(x, y, title),
+            # Add data validation helpers
+            "validate_numeric": lambda arr: pd.to_numeric(arr, errors='coerce'),
+            "drop_na": lambda arr: arr.dropna(),
+            "fill_na": lambda arr, value: arr.fillna(value),
+            # Add string utilities
+            "str_contains": lambda s, pattern: str(s).lower().find(pattern.lower()) != -1,
+            "str_replace": lambda s, old, new: str(s).replace(old, new),
+            "str_split": lambda s, sep: str(s).split(sep),
+            "str_join": lambda lst, sep: sep.join(str(x) for x in lst),
+            # Add more advanced statistical functions
+            "skewness": lambda arr: _calculate_skewness(arr),
+            "kurtosis": lambda arr: _calculate_kurtosis(arr),
+            "mode": lambda arr: _calculate_mode(arr),
+            "quantile": lambda arr, q: np.quantile(arr, q),
+            "iqr": lambda arr: np.percentile(arr, 75) - np.percentile(arr, 25),
+            # Add data transformation helpers
+            "normalize": lambda arr: (arr - np.mean(arr)) / np.std(arr) if np.std(arr) > 0 else arr,
+            "log_transform": lambda arr: np.log(arr + 1) if np.all(arr >= 0) else arr,
+            "rank": lambda arr: pd.Series(arr).rank().values,
+            # Add time series helpers
+            "rolling_mean": lambda arr, window: pd.Series(arr).rolling(window=window, min_periods=1).mean().values,
+            "rolling_std": lambda arr, window: pd.Series(arr).rolling(window=window, min_periods=1).std().values,
+            "diff": lambda arr: pd.Series(arr).diff().values,
+            # Add clustering helpers
+            "kmeans_clusters": lambda data, k: _simple_kmeans(data, k),
+            "bin_data": lambda data, bins: pd.cut(data, bins=bins, labels=False).values,
+        }
+
+        exec_result = _execute_user_code(code, env, timeout_seconds=timeout_seconds)
+        log_tool_call(session_id, user_id, "run_dataframe_python", {"timeout_seconds": timeout_seconds}, exec_result)
+        return exec_result
+    except Exception as e:
+        result = {"success": False, "message": f"Error running code: {str(e)}"}
+        log_tool_call(session_id, user_id, "run_dataframe_python", {"timeout_seconds": timeout_seconds}, result)
+        return result
+
+def _extract_code_from_text(text: str) -> str:
+    """Extract python code from a model response supporting fenced blocks or raw text."""
+    fence_match = re.search(r"```(?:python)?\n([\s\S]*?)```", text, flags=re.IGNORECASE)
+    if fence_match:
+        return fence_match.group(1).strip()
+    return text.strip()
+
+def generate_and_run_dataframe_python(instruction: str, timeout_seconds: int = 8, tool_context=None) -> dict:
+    """Use Gemini to generate Python for df, then run it in sandbox and return code + output.
+
+    Contract for the generated code:
+      - Do not import modules; use provided df, pd, np, datetime, math, statistics
+      - Must set a variable named `result` with JSON-serializable content
+      - May print for logs; stdout will be captured
+    """
+    session_id, user_id = ensure_session_exists(tool_context)
+    try:
+        df = get_jobs_from_global_dataframe()
+        if len(df) == 0:
+            result = {
+                "success": True,
+                "message": "No job data available for the specified criteria",
+                "generated_code": "",
+                "execution": {"success": True, "output": {"stdout": ""}}
+            }
+            log_tool_call(session_id, user_id, "generate_and_run_dataframe_python", {"instruction": instruction}, result)
+            return result
+
+        # Prepare schema context
+        try:
+            schema = [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns[:80]]
+        except Exception:
+            schema = [str(c) for c in list(df.columns)[:80]]
+
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return {"success": False, "message": "GOOGLE_API_KEY not set for code generation"}
+        genai.configure(api_key=api_key)
+
+        system_rules = (
+            "You are to produce ONLY Python code that will run with variables df, pd, np, datetime, math, statistics. "
+            "Do not import modules, do not read/write files, do not access network or OS. "
+            "Set a variable named result with JSON-serializable content (dict, list, str, float, int). "
+            "Printing is allowed for logs."
+        )
+
+        user_prompt = {
+            "instruction": instruction,
+            "dataframe_schema": schema,
+            "hints": {
+                "jobstatus_mapping": {1: "Idle", 2: "Running", 3: "Removed", 4: "Completed", 5: "Held", 6: "Transferring Output", 7: "Suspended"}
+            }
+        }
+
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content([
+            {"role": "system", "parts": [system_rules]},
+            {"role": "user", "parts": [json.dumps(user_prompt)]},
+        ])
+        text = getattr(response, "text", "") or ""
+        code = _extract_code_from_text(text)
+
+        exec_result = run_dataframe_python(code=code, timeout_seconds=timeout_seconds, tool_context=tool_context)
+        result = {"success": True, "generated_code": code, "execution": exec_result}
+        log_tool_call(session_id, user_id, "generate_and_run_dataframe_python", {"instruction": instruction}, result)
+        return result
+    except Exception as e:
+        result = {"success": False, "message": f"Error generating/executing code: {str(e)}"}
+        log_tool_call(session_id, user_id, "generate_and_run_dataframe_python", {"instruction": instruction}, result)
+        return result
+
 ADK_AF_TOOLS = {
     "list_jobs": FunctionTool(func=list_jobs),
     "get_job_status": FunctionTool(func=get_job_status),
@@ -2348,6 +2836,9 @@ ADK_AF_TOOLS = {
     
     # Memory Analysis Tools
     "analyze_memory_usage_by_owner": FunctionTool(func=analyze_memory_usage_by_owner),
+    # Dynamic Analysis
+    "run_dataframe_python": FunctionTool(func=run_dataframe_python),
+    "generate_and_run_dataframe_python": FunctionTool(func=generate_and_run_dataframe_python),
 }
 
 
